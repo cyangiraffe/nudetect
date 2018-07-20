@@ -260,11 +260,47 @@ def plot_pixel_map(count_map, plot_width=550, plot_height=500,
     return p
 
 
-def plot_count_hist(count_map):
+def plot_count_hist(count_map, bins=100, plot_width=600, plot_height=400,
+    title='Count Histogram'):
     '''
     Plots a count histogram with respect to the pixels.
+
+    Arguments:
+        count_map: 2D array
+            A 32 x 32 array of numbers. Each entry represents the number of
+            counts read by the detector pixel at the corresponding index.
+
+    Keyword Arguments:
+        bins : int or sequence of scalars or str, optional
+            If `bins` is an int, it defines the number of equal-width
+            bins in the given range (10, by default). If `bins` is a
+            sequence, it defines the bin edges, including the rightmost
+            edge, allowing for non-uniform bin widths.
+            For information about str values of 'bins', see the numpy
+            documentation of the parameter with 'help(np.histogram)'.
+        plot_width: int
+            The width of the plot in pixels
+            (default: 550)
+        plot_height: int
+            The height of the plot in pixels
+            (default: 500)
+        title: str
+            The title displayed on the plot.
+            (default: 'Count Histogram')
     '''
-    pass
+    # Binning the data
+    counts = count_map.flatten()
+    hist, edges = np.histogram(count_map, bins=bins)
+
+    # Generating the Figure object 'p'
+    p = bokeh.plotting.figure(plot_width=plot_width, plot_height=plot_height,
+        title=title, x_axis_label='Counts', y_axis_label='Number of Pixels')
+
+    # Plotting rectangular glyphs for bins.
+    p.quad(left=edges[:-1], right=edges[1:], top=hist, bottom=0)
+
+    return p
+
 
 def quick_gain(filepath):
     '''
@@ -278,8 +314,13 @@ def gain_correct(filepath, gain):
     '''
     pass
 
-
+# For testing, will plot a pixel map and histogram for a file of 
+# count map data.
 if __name__ == '__main__':
-    gamma_count_map('20170315_H100_gamma_Am241_-10C.0V.fits',
-                    detector='H100', source='Am241', temp='-10C',
-                    voltage='0V')
+    count_map = np.loadtxt('count_map_H100_Am241_-10C_0V.txt')
+    pixel_map = plot_pixel_map(count_map)
+    histogram = plot_count_hist(count_map)
+
+    bokeh.io.output_file('count_map.html')
+    bokeh.io.show(pixel_map)
+    bokeh.io.show(histogram)
