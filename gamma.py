@@ -14,6 +14,98 @@ import bokeh.io
 import bokeh.plotting
 import bokeh.models as bm
 
+def construct_path(ext, filepath='', description='', detector='', source='', 
+    temp='', voltage='', save_dir='', etc='', sep_by_detector=False):
+    '''
+    Constructs a path for saving data and figures based on user input. The main
+    use of this function is for other functions in this package to use it as 
+    the default path constructor if the user doesn't supply their own function.
+
+    Note: you must supply at least one of these collections of parameters:
+        * filepath
+        * detector, source, temp, voltage
+    If both are given, only 'filepath' will be considered
+
+        Arguments:
+            ext: str
+                The file name extension. 
+
+        Keyword Arguments:
+            detector: str
+                The detector ID
+                (default: '')
+            source: str
+                The radioactive source used
+                (default: '')
+            temp: str
+                The temperpature
+                (default: '')
+            voltage: str
+                The voltage
+                (default: '')
+            save_dir: str
+                The directory to which the count_map file will be saved. If left
+                unspecified, the file will be saved to the current directory.
+                (default: '')
+            etc: str 
+                Other important information
+                (default: '')
+
+    '''
+    if not (filepath or (detector and source and temp and voltage)):
+        raise Exception('''
+            You must supply at least one of these collections of parameters:
+                * filepath
+                * detector, source, temp, voltage
+        ''')
+    elif filepath:
+        # Construct the file name from the file name in 'filepath'.
+        slash = 0
+        dot = 0
+        i = 0
+
+        for char in filepath:
+            if char == '/':
+                slash = i
+            if char == '.':
+                dot = i
+            i += 1
+
+        if slash == 0:
+            slash = -1
+
+        save_path = filepath[slash + 1:dot].replace('.', '_')
+    else:
+        # Construct the file name from scratch
+        save_path = f'{detector}_{source}_{temp}_{voltage}'
+    
+    # Prepend the description if specified
+    if description:
+        save_path = f'{description}_{save_path}'
+
+    # Append extra info to the file name if specified
+    if etc:
+        save_path += f'_{etc}'
+
+    # Append the file extension
+    save_path += ext
+
+    # Prepend the detector directory if desired
+    if sep_by_detector:
+        if not detector:
+            raise Exception('''
+                Since 'sep_by_detector' is True, a value must be supplied
+                for the 'detector' parameter.
+            ''')
+        save_path = f'{detector}/{save_path}'
+
+    # Prepend the save directory if specified
+    if save_dir:
+        save_path = f'{save_dir}/{save_path}'
+
+    return save_path
+
+
 def gamma_count_map(filepath, save=True, detector='', source='', temp='',
     voltage='', etc='', save_dir='', ext='.txt'):
     '''
@@ -95,8 +187,11 @@ def gamma_count_map(filepath, save=True, detector='', source='', temp='',
     START = np.argmax(mask)
     END = len(mask) - np.argmax(mask[::-1])
 
+    # Masking out non-positive pulse heights
     PHmask = 0 < np.array(data['PH'][START:END])
+    # Masking out artificially stimulated events
     STIMmask = np.array(data['STIM'][START:END]) == 0
+    # Combining the above masks
     TOTmask = np.multiply(PHmask, STIMmask)
 
     # Generate the count_map from event data
@@ -302,11 +397,145 @@ def plot_count_hist(count_map, bins=100, plot_width=600, plot_height=400,
     return p
 
 
-def quick_gain(filepath):
+def quick_gain(filepath, source, plot=True, plot_dir='', plot_ext='.eps', save=True, detector='', temp='', voltage='', etc='', save_dir='', data_ext='.txt'):
     '''
-    Generates a gain correction file from the gamma flood data.
+    Generates gain correction data from the raw gamma flood event data.
+    Arguments:
+        filepath: str
+            The filepath to the gamma flood data
+        source: str
+            The radioactive source used. Can be either 'Am241' or 'Co57'.
+
+    Keyword Arguments:
+        plot: bool
+            If true, plots and energy spectrum for each pixel
+        save: bool 
+            If True, saves count_map as a .txt file, and a non-empty string
+            must be supplied to the 'detector', 'source', 'temp', and 
+            'voltage' kwargs. If False, then nothing is saved, and these
+            parameters may be left unspecified.
+            (default: True)
+        detector: str
+            The detector ID
+            (default: '')
+        temp: str
+            The temperpature
+            (default: '')
+        voltage: str
+            The voltage
+            (default: '')
+        etc: str 
+            Other important information
+            (default: '')
+        save_dir: str
+            The directory to which the count_map file will be saved. If left
+            unspecified, the file will be saved to the current directory.
+            (default: '')
+        ext: str
+            The file name extension for the count_map file. 
+            (default: '.txt')
+
+    Return:
+        gain: 2D numpy.ndarray
+            A 32 x 32 array of (ints?). Each entry represents the number of
+            counts read by the detector pixel at the corresponding index.
     '''
-    pass
+    ### Managing information for creating save paths
+    # Parameter housekeeping if saving gain
+
+
+    ### The actual data analysis
+    # From http://www.nndc.bnl.gov/nudat2/indx_dec.jsp
+    lines = {
+        'Am241': 59.54,
+        'Co57': 122.06
+    }
+
+    # Get data from gamma flood FITS file
+    with fits.open(filepath) as file:
+        data = file[1].data
+
+    mask = data['TEMP'] > -20
+
+    START = np.argmax(mask)
+    END = len(mask) - np.argmax(mask[::-1])
+
+    maxchannel = 10000
+    bins = np.arange(1, maxchannel)
+    gain = np.zeros((32, 32))
+
+    # Iterating through pixels
+    for x in range(32):
+        RAWXmask = data.field('RAWX')[START:END] == x
+        for y in range(32):
+            # Getting peak height in 'channels' for all events for the 
+            # current pixel.
+            channel = data.field('PH')[START:END][np.nonzero(
+                np.multiply(
+                    RAWXmask, 
+                    data.field('RAWY')[START:END] == y
+            ))]
+
+            # If there were events at this pixel, fit the strongest peak
+            # in the channel spectrum with a Gaussian.
+            if len(channel):
+                # 'spectrum' contains counts at each channel
+                spectrum, edges = np.histogram(channel, bins=bins, 
+                    range=(0, maxchannel))
+                # TODO
+                # Why only take argmax of slice from 3000 to 6000 channels?
+                # Should this be a parameter to the function or hard-coded?
+                # 'centroid' is the channel with the most counts
+                centroid = np.argmax(spectrum[3000:6000]) + 3000
+                # TODO
+                # Same here. Should the range of fit channels be a tunable
+                # parameter?
+                fit_channels = np.arange(centroid - 100, centroid + 200)
+                g_init = models.Gaussian1D(amplitude=spectrum[centroid], 
+                    mean=centroid, stddev = 75)
+                fit_g = fitting.LevMarLSQFitter()
+                g = fit_g(g_init, fit_channels, spectrum[fit_channels])
+
+                # If we can determine the covariance matrix (which implies
+                # that the fit succeeded), then calculate this pixel's gain
+                if fit_g.fit_info['param_cov'] is not None:
+                    gain[y, x] = lines[source] / g.mean
+                    if plot:
+                        sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
+                        fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
+                        mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
+                        frac_err = np.sqrt(np.square(fwhm_err) 
+                            + np.square(g.fwhm * mean_err / g.mean)) / g.mean
+                        str_err = str(int(round(
+                            frac_err * lines[source] * 1000
+                        )))
+                        str_fwhm = str(int(round(
+                                lines[source] * 1000 * g.fwhm/g.mean, 0
+                        )))
+                        plt.text(
+                            maxchannel * 3 / 5, spectrum[centroid] * 3 / 5, 
+                            r'$\mathrm{FWHM}=$' + str_fwhm + r'$\pm$' 
+                            + str_err + ' eV', fontsize=13
+                        )
+
+                        plt.hist(
+                            np.multiply(channel, gain[y, x]), 
+                            bins=np.multiply(bins, gain[y, x]),
+                            range=(0, maxchannel * gain[y, x]), 
+                            histtype='stepfilled'
+                        )
+
+                        plt.plot(
+                            np.multiply(fit_channels, gain[y, x]), 
+                            g(fit_channels), label='Gaussian fit'
+                        )
+
+                        plt.ylabel('Counts')
+                        plt.xlabel('Energy')
+                        plt.legend()
+                        plt.tight_layout()
+                        plt.savefig(plot_dir)
+                        plt.close()
 
 def gain_correct(filepath, gain):
     '''
