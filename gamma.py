@@ -5,6 +5,10 @@ STIM: Mask value. If 1, event is from voltage pulse, not photon. (Usually applie
 UP: micro pluse -- also a mask (in noise)
 '''
 
+# Packages for making life easier
+import os.path
+
+# Data analysis packages
 import numpy as np
 from astropy.io import fits
 from astropy.modeling import models, fitting
@@ -14,69 +18,108 @@ import bokeh.io
 import bokeh.plotting
 import bokeh.models as bm
 
-def construct_path(ext, filepath='', description='', detector='', source='', 
-    temp='', voltage='', save_dir='', etc='', sep_by_detector=False):
+def construct_path(ext='', filepath='', description='', detector='', 
+    source='', temp='', voltage='', save_dir='', etc='', 
+    sep_by_detector=False):
     '''
-    Constructs a path for saving data and figures based on user input. The main
-    use of this function is for other functions in this package to use it as 
-    the default path constructor if the user doesn't supply their own function.
+    Constructs a path for saving data and figures based on user input. The 
+    main use of this function is for other functions in this package to use 
+    it as the default path constructor if the user doesn't supply their own 
+    function.
 
     Note: you must supply at least one of these collections of parameters:
         * filepath
         * detector, source, temp, voltage
     If both are given, only 'filepath' will be considered
 
-        Arguments:
-            ext: str
-                The file name extension. 
+    Note to developers: This function is designed to throw a lot of 
+    exceptions and be strict about formatting early on to avoid 
+    complications later. Call it early in scripts to avoid losing the 
+    results of a long computation to a mistyped directory.
 
-        Keyword Arguments:
-            detector: str
-                The detector ID
-                (default: '')
-            source: str
-                The radioactive source used
-                (default: '')
-            temp: str
-                The temperpature
-                (default: '')
-            voltage: str
-                The voltage
-                (default: '')
-            save_dir: str
-                The directory to which the count_map file will be saved. If left
-                unspecified, the file will be saved to the current directory.
-                (default: '')
-            etc: str 
-                Other important information
-                (default: '')
-
+    Keyword Arguments:
+        ext: str
+            The file name extension.
+        filepath: str
+            A Unix/Mac style path to a file whose name will form the 
+            basis for the file name returned by this function, if this
+            parameter is specified.
+        detector: str
+            The detector ID
+            (default: '')
+        source: str
+            The radioactive source used
+            (default: '')
+        temp: str
+            The temperpature
+            (default: '')
+        voltage: str
+            The voltage
+            (default: '')
+        description: str
+            A short description of what the file contains. This will be 
+            prepended to the file name.
+            E.g., 'count_map'.
+            (default: '')
+        etc: str 
+            Other important information, e.g., pixel coordinates. This will 
+            be appended to the file name.
+            (default: '')
+        save_dir: str
+            The directory to which the count_map file will be saved. If left
+            unspecified, the file will be saved to the current directory.
+            (default: '')
+        sep_by_detector: bool
+            If True, constructs the file path such that the file is saved in 
+            a subdirectory of 'save_dir' named according to the string 
+            passed for 'detector'. Setting this to 'True' makes 'detector' a 
+            required kwarg, even if 'filepath' is specified.
+            (default: False)
     '''
+    ### Handling exceptions and potential errors
+
+    # If 'ext' does not start with a '.', fix it.
+    if ext and ext[0] != '.'
+        ext = f'.{ext}'
+
+    # Check that the save directory exists
+    if save_dir and sep_by_detector:
+        if not detector:
+            raise Exception('''
+                Since 'sep_by_detector' is True, a value must be supplied
+                for the 'detector' parameter.
+            ''')
+        if not os.path.exists(f'{save_dir}/{detector}'):
+            raise ValueError(
+                f'The directory \'{save_dir}/{detector}\' does not exist.'
+            )
+    elif save_dir:
+        if not os.path.exists(save_dir):
+            raise ValueError(f'The directory \'{save_dir}\' does not exist.')
+
+    # Raise an exception if not enough parameters are supplied.
     if not (filepath or (detector and source and temp and voltage)):
         raise Exception('''
             You must supply at least one of these collections of parameters:
                 * filepath
                 * detector, source, temp, voltage
         ''')
-    elif filepath:
-        # Construct the file name from the file name in 'filepath'.
-        slash = 0
-        dot = 0
-        i = 0
 
-        for char in filepath:
-            if char == '/':
-                slash = i
-            if char == '.':
-                dot = i
-            i += 1
+    ### Constructing the path name
 
-        if slash == 0:
-            slash = -1
-
-        save_path = filepath[slash + 1:dot].replace('.', '_')
+    # If supplied, construct the file name from the file name in 'filepath'.
+    if filepath:
+        filename = os.path.basename(filepath)
+        save_path = os.path.splitext(file)
+    # Construct the file name from scratch if no 'filepath' is supplied.
     else:
-        # Construct the file name from scratch
+        # Remove all spaces from strings that will be in a file name.
+        detector = detector.replace(' ', '')
+        source   = source.replace(' ', '')
+        temp     = temp.replace(' ', '')
+        voltage  = voltage.replace(' ', '')
+        etc      = etc.replace(' ', '')
+
         save_path = f'{detector}_{source}_{temp}_{voltage}'
     
     # Prepend the description if specified
@@ -92,11 +135,6 @@ def construct_path(ext, filepath='', description='', detector='', source='',
 
     # Prepend the detector directory if desired
     if sep_by_detector:
-        if not detector:
-            raise Exception('''
-                Since 'sep_by_detector' is True, a value must be supplied
-                for the 'detector' parameter.
-            ''')
         save_path = f'{detector}/{save_path}'
 
     # Prepend the save directory if specified
@@ -106,8 +144,8 @@ def construct_path(ext, filepath='', description='', detector='', source='',
     return save_path
 
 
-def gamma_count_map(filepath, save=True, detector='', source='', temp='',
-    voltage='', etc='', save_dir='', ext='.txt'):
+def gamma_count_map(filepath, save=True, path_constructor=path_constructor,
+    save_dir='', sep_by_detector=False, detector='', etc='', ext='.txt'):
     '''
     Generates count map data for raw gamma flood data. No corrections are 
     made for pixel gain here.
@@ -118,30 +156,26 @@ def gamma_count_map(filepath, save=True, detector='', source='', temp='',
 
     Keyword Arguments:
         save: bool 
-            If True, saves count_map as a .txt file, and a non-empty string
-            must be supplied to the 'detector', 'source', 'temp', and 
-            'voltage' kwargs. If False, then nothing is saved, and these
-            parameters may be left unspecified.
+            If True, saves count_map as an ascii file.
             (default: True)
-        detector: str
-            The detector ID
-            (default: '')
-        source: str
-            The radioactive source used
-            (default: '')
-        temp: str
-            The temperpature
-            (default: '')
-        voltage: str
-            The voltage
-            (default: '')
+        path_constructor: function
+            A function that takes the same parameters as the function
+            'gamma.path_constructor' that returns a string representing a 
+            path to which the file will be saved.
+            (default: gamma.path_constructor)
         etc: str 
-            Other important information
+            Other important information.
             (default: '')
         save_dir: str
             The directory to which the count_map file will be saved. If left
             unspecified, the file will be saved to the current directory.
             (default: '')
+        sep_by_detector: bool
+            If True, constructs the file path such that the file is saved in 
+            a subdirectory of 'save_dir' named according to the string 
+            passed for 'detector'. Setting this to 'True' makes 'detector' a 
+            required kwarg, even if 'filepath' is specified.
+            (default: False)
         ext: str
             The file name extension for the count_map file. 
             (default: '.txt')
@@ -151,25 +185,11 @@ def gamma_count_map(filepath, save=True, detector='', source='', temp='',
             A 32 x 32 array of (ints?). Each entry represents the number of
             counts read by the detector pixel at the corresponding index.
     '''
-    # Parameter housekeeping if saving count_map
+    # Generating the save path, if needed.
     if save:
-        # Request unsupplied parameters necessary to construct the filename
-        # for the count_map data.
-        while not detector:
-            detector = input('Enter the detector ID (required): ')
-        while not source:
-            source = input('Enter the source (required): ')
-        while not temp:
-            temp = input('Enter the temperature (required): ')
-        while not voltage:
-            voltage = input('Enter the voltage (required): ')
-
-        # Remove all spaces from strings that will be in a file name.
-        detector = detector.replace(' ', '')
-        source   = source.replace(' ', '')
-        temp     = temp.replace(' ', '')
-        voltage  = voltage.replace(' ', '')
-        etc      = etc.replace(' ', '')
+        save_path = path_constructor(ext, filepath=filepath, 
+            save_dir=save_dir, sep_by_detector=sep_by_detector, 
+            detector=detector, etc=etc)
 
     # Get data from gamma flood FITS file
     with fits.open(filepath) as file:
@@ -204,17 +224,8 @@ def gamma_count_map(filepath, save=True, detector='', source='', temp='',
             count_map[i, j] = np.sum(np.multiply(
                 TOTmask, np.multiply(RAWXmask, RAWYmask)))
 
-    # Saves the 'count_map' array as a human-readable text file.
+    # Saves the 'count_map' array as an ascii file.
     if save:
-        # Construct the file name
-        save_path = f'count_map_{detector}_{source}_{temp}_{voltage}'
-        if etc:
-            save_path += f'_{etc}'
-        save_path += ext
-        # Prepend the save directory if specified
-        if save_dir:
-            save_path = f'{save_dir}/{save_path}'
-    
         np.savetxt(save_path, count_map)
 
     return count_map
@@ -397,7 +408,9 @@ def plot_count_hist(count_map, bins=100, plot_width=600, plot_height=400,
     return p
 
 
-def quick_gain(filepath, source, plot=True, plot_dir='', plot_ext='.eps', save=True, detector='', temp='', voltage='', etc='', save_dir='', data_ext='.txt'):
+def quick_gain(filepath, source, path_constructor=path_constructor, 
+    plot=True, plot_dir='', plot_ext='.eps', save_data=True, data_ext='.txt',
+    data_dir='', detector='', temp='', voltage='', etc=''):
     '''
     Generates gain correction data from the raw gamma flood event data.
     Arguments:
@@ -440,11 +453,14 @@ def quick_gain(filepath, source, plot=True, plot_dir='', plot_ext='.eps', save=T
             A 32 x 32 array of (ints?). Each entry represents the number of
             counts read by the detector pixel at the corresponding index.
     '''
-    ### Managing information for creating save paths
-    # Parameter housekeeping if saving gain
 
+    if save_data:
+        data_path = path_constructor(filename=filename, ext=data_ext,
+            description='gain')
 
-    ### The actual data analysis
+    if plot:
+        plot_path = path_constructor(filename=filename, description='gain')
+
     # From http://www.nndc.bnl.gov/nudat2/indx_dec.jsp
     lines = {
         'Am241': 59.54,
@@ -472,9 +488,8 @@ def quick_gain(filepath, source, plot=True, plot_dir='', plot_ext='.eps', save=T
             # current pixel.
             channel = data.field('PH')[START:END][np.nonzero(
                 np.multiply(
-                    RAWXmask, 
-                    data.field('RAWY')[START:END] == y
-            ))]
+                    RAWXmask, data.field('RAWY')[START:END] == y
+                ))]
 
             # If there were events at this pixel, fit the strongest peak
             # in the channel spectrum with a Gaussian.
@@ -501,6 +516,7 @@ def quick_gain(filepath, source, plot=True, plot_dir='', plot_ext='.eps', save=T
                 if fit_g.fit_info['param_cov'] is not None:
                     gain[y, x] = lines[source] / g.mean
                     if plot:
+                        plt.figure()
                         sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
                         fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
                         mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
@@ -534,8 +550,33 @@ def quick_gain(filepath, source, plot=True, plot_dir='', plot_ext='.eps', save=T
                         plt.xlabel('Energy')
                         plt.legend()
                         plt.tight_layout()
-                        plt.savefig(plot_dir)
+                        plt.savefig(f'{plot_path}_x{x}_y{y}{plot_ext}')
                         plt.close()
+
+    # Interpolate gain for pixels where fit was unsuccessful. Do it twice in
+    # case the first pass had insufficient data to interpolate some pixels.
+    for _ in range(2):
+        newgain = np.zeros((34, 34))
+        # Note that newgain's indices will be shifted over one from 'gain'.
+        newgain[1:33, 1:33] = gain
+        # 'empty' contains indices at which the fit was unsuccessful
+        empty = np.transpose(np.nonzero(gain == 0.0))
+        # Iterating through pixels with failed fitting.
+        for x in empty:
+            # 'temp' is the 3x3 array of gain values around the pixel for 
+            # which the fitting failed.
+            temp = newgain[x[0]:x[0]+3, x[1]:x[1]+3]
+            # If there are any nonzero values in 'temp', set the pixel's 
+            # gain to their mean.
+            if np.count_nonzero(temp):
+                gain[x[0], x[1]] = np.sum(temp) / np.count_nonzero(temp)
+
+    # Save gain data to an ascii file.
+    if save_data:
+        np.savetxt(data_path, gain)
+
+    return gain
+
 
 def gain_correct(filepath, gain):
     '''
