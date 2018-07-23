@@ -18,6 +18,13 @@ import bokeh.io
 import bokeh.plotting
 import bokeh.models as bm
 
+# Matplotlib for static plots
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from matplotlib.gridspec import GridSpec
+import seaborn as sns
+
+
 def construct_path(ext='', filepath='', description='', detector='', 
     source='', temp='', voltage='', save_dir='', etc='', 
     sep_by_detector=False):
@@ -79,16 +86,11 @@ def construct_path(ext='', filepath='', description='', detector='',
     ### Handling exceptions and potential errors
 
     # If 'ext' does not start with a '.', fix it.
-    if ext and ext[0] != '.'
+    if ext and ext[0] != '.':
         ext = f'.{ext}'
 
     # Check that the save directory exists
     if save_dir and sep_by_detector:
-        if not detector:
-            raise Exception('''
-                Since 'sep_by_detector' is True, a value must be supplied
-                for the 'detector' parameter.
-            ''')
         if not os.path.exists(f'{save_dir}/{detector}'):
             raise ValueError(
                 f'The directory \'{save_dir}/{detector}\' does not exist.'
@@ -110,7 +112,8 @@ def construct_path(ext='', filepath='', description='', detector='',
     # If supplied, construct the file name from the file name in 'filepath'.
     if filepath:
         filename = os.path.basename(filepath)
-        save_path = os.path.splitext(file)
+        save_path = os.path.splitext(filename)[0].replace('.', '_')
+
     # Construct the file name from scratch if no 'filepath' is supplied.
     else:
         # Remove all spaces from strings that will be in a file name.
@@ -130,21 +133,29 @@ def construct_path(ext='', filepath='', description='', detector='',
     if etc:
         save_path += f'_{etc}'
 
+
     # Append the file extension
     save_path += ext
 
     # Prepend the detector directory if desired
     if sep_by_detector:
+        if not detector:
+            raise Exception('''
+                Since 'sep_by_detector' is True, a value must be supplied
+                for the 'detector' parameter.
+            ''')
+
         save_path = f'{detector}/{save_path}'
 
     # Prepend the save directory if specified
     if save_dir:
         save_path = f'{save_dir}/{save_path}'
 
+
     return save_path
 
 
-def gamma_count_map(filepath, save=True, path_constructor=path_constructor,
+def count_map(filepath, save=True, path_constructor=construct_path,
     save_dir='', sep_by_detector=False, detector='', etc='', ext='.txt'):
     '''
     Generates count map data for raw gamma flood data. No corrections are 
@@ -160,9 +171,9 @@ def gamma_count_map(filepath, save=True, path_constructor=path_constructor,
             (default: True)
         path_constructor: function
             A function that takes the same parameters as the function
-            'gamma.path_constructor' that returns a string representing a 
+            'gamma.construct_path' that returns a string representing a 
             path to which the file will be saved.
-            (default: gamma.path_constructor)
+            (default: gamma.construct_path)
         etc: str 
             Other important information.
             (default: '')
@@ -231,10 +242,10 @@ def gamma_count_map(filepath, save=True, path_constructor=path_constructor,
     return count_map
 
 
-def plot_pixel_map(count_map, plot_width=550, plot_height=500,
+def pixel_map_counts(count_map, plot_width=550, plot_height=500,
     low=None, high=None, low_color='grey', high_color='red',
      cb_label_standoff=8, cb_title_standoff=12, color_mapping='linear', 
-    title='Pixel Map', palette='Viridis256'):
+    title='Count Pixel Map', palette='Viridis256'):
     '''
     Plots a heat map of the counts detected by each pixel.
 
@@ -249,7 +260,7 @@ def plot_pixel_map(count_map, plot_width=550, plot_height=500,
             import numpy as np
 
             count_map = np.loadtxt('count_map_file_name.txt')
-            plot = plot_pixel_map(count_map)
+            plot = pixel_map_counts(count_map)
             show(plot)
 
     Arguments:
@@ -365,6 +376,140 @@ def plot_pixel_map(count_map, plot_width=550, plot_height=500,
 
     return p
 
+def pixel_map_gain(gain, plot_width=550, plot_height=500,
+    low=None, high=None, low_color='grey', high_color='red',
+     cb_label_standoff=8, cb_title_standoff=12, color_mapping='linear', 
+    title='Gain Pixel Map', palette='Viridis256'):
+    '''
+    Plots a heat map of the gain for each pixel.
+
+    If unfamiliar with bokeh:
+        To display or save the figure object returned by this function, see
+        the documentation for the bokeh.io module at 
+        https://bokeh.pydata.org/en/latest/docs/reference/io.html
+        The return object of this function can be passed as the parameter 
+        labelled 'obj' for any of the functions documented there. For 
+        example, to view in a jupyter notebook:
+            from bokeh.io import output_notebook, show
+            import numpy as np
+
+            gain = np.loadtxt('gain_correction_file_name.txt')
+            plot = pixel_map_gain(gain)
+            show(plot)
+
+    Arguments:
+        gain: 2D array
+            A 32 x 32 array of numbers. Each entry represents the number of
+            counts read by the detector pixel at the corresponding index.
+
+    Keyword Arguments:
+        plot_width: int
+            The width of the plot in pixels
+            (default: 550)
+        plot_height: int
+            The height of the plot in pixels
+            (default: 500)
+        low: int or float
+            The value below which elements of gain are mapped to the
+            lowest color.
+            (default: lowest non-zero value in gain)
+        high: int or float
+            The value above which elements of gain are mapped to the
+            highest color.
+            (default: largest non-zero value in gain)
+        low_color: str or 3-tuple of ints or 4-tuple(int, int, int, float)
+            Color to be used if data is lower than low value. If None,
+            values lower than low are mapped to the first color in the
+            palette. If str, must be either a hex string startig with '#' 
+            or a named SVG color. If a tuple, 1st 3 entries are RGB out of
+            255, and the 4th optional entry is alpha. For details,
+            https://bokeh.pydata.org/en/latest/docs/reference/core/properties.html#bokeh.core.properties.Color
+            (default: 'grey')
+        high_color: str or 3-tuple of ints or 4-tuple(int, int, int, float)
+            Color to be used if data is higher than 'high' value. If None, 
+            values higher than 'high' are mapped to the last color in the 
+            palette. See 'low_color' for help formatting this parameter.
+            (default: 'red')
+        cb_label_standoff: int
+            The number of pixels by which the color bar's ticker labels
+            are offset from the color bar.
+            (deault: 8)
+        cb_title_standoff: int
+            The number of pixels the color bar's title is above the color bar
+            (default: 12)
+        title: str
+            The title displayed on the plot.
+            (default: 'Pixel Map')
+        palette: str or sequence
+            A sequence of colors to use as the target palette for mapping.
+            This property can also be set as a String, to the name of any 
+            of the palettes shown in bokeh.palettes. For example, you could
+            also set the palette to 'Inferno256', 'Magma256', or 'Plamsa256'.
+            (default: 'Viridis256')
+
+    Return:
+        A bokeh.plotting.Figure object with a heat map of 'gain'
+        plotted. 
+    '''
+
+    # Put data in a ColumnDataSource object such that data will display
+    # correctly upon hovering over a pixel.
+    source = bm.ColumnDataSource(data={
+        'x': [0.5],
+        'y': [0.5],
+        'gain': [gain]
+    })
+
+    # Format of the tooltip when hovering over a pixel.
+    tooltips = [
+        ('(x, y)', '($x{g}, $y{g})'),
+        ('Gain', '@gain')
+    ]
+
+    # Generates the figure canvas 'p'
+    p = bokeh.plotting.figure(plot_width=plot_width, plot_height=plot_height,
+        x_range=(0.5, 32.5), y_range=(0.5, 32.5),
+        tools='pan,wheel_zoom,box_zoom,save,reset,hover',
+        tooltips=tooltips, toolbar_location='above', title=title)
+
+    # Set heatmap axes to have tick intervals scale by a factor of 2.
+    # This causes the 32nd pixel to have its own tick. 
+    axis_ticker = bm.AdaptiveTicker(max_interval=None, min_interval=1, 
+        num_minor_ticks=0, mantissas=[2], base=2)
+    p.xaxis.ticker = axis_ticker
+    p.yaxis.ticker = axis_ticker
+
+    # If not specified, assign values to 'high' and 'low' based on data.
+    if (not low) or (not high):
+        flat_counts = gain.flatten()
+        flat_counts = np.ma.masked_values(flat_counts, 0)
+    if not low:
+        low = np.amin(flat_counts)
+    if not high:
+        high = np.amax(flat_counts)
+
+    # Formatting the color bar
+    if color_mapping == 'linear':
+        color_mapper = bm.LinearColorMapper(palette=palette, 
+        low=low, high=high, low_color=low_color, high_color=high_color)
+    elif color_mapping == 'log':
+        color_mapper = bm.LogColorMapper(palette=palette,
+            low=low, high=high)
+
+    cb_ticker = bm.AdaptiveTicker()
+
+    color_bar = bm.ColorBar(location=(0, 0), ticker=cb_ticker,
+        label_standoff=cb_label_standoff, color_mapper=color_mapper,
+        title='Gain', title_standoff=cb_title_standoff)
+
+    p.add_layout(color_bar, 'right')
+
+    # Generates the heatmap itself
+    p.image(source=source, image='gain', x='x', y='y', dw=32, dh=32,
+        color_mapper=color_mapper)
+
+    return p
+
 
 def plot_count_hist(count_map, bins=100, plot_width=600, plot_height=400,
     title='Count Histogram'):
@@ -408,28 +553,36 @@ def plot_count_hist(count_map, bins=100, plot_width=600, plot_height=400,
     return p
 
 
-def quick_gain(filepath, source, path_constructor=path_constructor, 
-    plot=True, plot_dir='', plot_ext='.eps', save_data=True, data_ext='.txt',
-    data_dir='', detector='', temp='', voltage='', etc=''):
+def quick_gain(filepath, source, path_constructor=construct_path, 
+    save_plot=True, plot_dir='', plot_ext='.eps', plot_sep_by_detector=True, 
+    save_data=True, data_dir='', data_ext='.txt', data_sep_by_detector=False,
+    detector='', temp='', voltage='', etc=''):
     '''
     Generates gain correction data from the raw gamma flood event data.
     Arguments:
         filepath: str
             The filepath to the gamma flood data
-        source: str
-            The radioactive source used. Can be either 'Am241' or 'Co57'.
+        source: float or str
+            The radioactive source used. Can be either 'Am241' or 'Co57'. 
+            This function will fit the pixels' spectrum to the strongest 
+            emission line of the supplied source. To supply a different
+            emission line for fitting, set this parameter to its energy
+            in keV, as a float.
 
     Keyword Arguments:
-        plot: bool
-            If true, plots and energy spectrum for each pixel
-        save: bool 
+        save_plot: bool
+            If true, plots and energy spectrum for each pixel and saves
+            the figure.
+            (default: True)
+        save_data: bool 
             If True, saves count_map as a .txt file, and a non-empty string
             must be supplied to the 'detector', 'source', 'temp', and 
             'voltage' kwargs. If False, then nothing is saved, and these
             parameters may be left unspecified.
             (default: True)
         detector: str
-            The detector ID
+            The detector ID. Required if either 'data_sep_by_detector' or 
+            'plot_sep_by_detector' is True.
             (default: '')
         temp: str
             The temperpature
@@ -455,17 +608,25 @@ def quick_gain(filepath, source, path_constructor=path_constructor,
     '''
 
     if save_data:
-        data_path = path_constructor(filename=filename, ext=data_ext,
-            description='gain')
+        data_path = path_constructor(filepath=filepath, ext=data_ext,
+            description='gain', sep_by_detector=data_sep_by_detector,
+            detector=detector)
 
-    if plot:
-        plot_path = path_constructor(filename=filename, description='gain')
+    if save_plot:
+        plot_path = path_constructor(filepath=filepath, description='gain',
+            sep_by_detector=plot_sep_by_detector, detector=detector)
 
     # From http://www.nndc.bnl.gov/nudat2/indx_dec.jsp
+    # Peak emission lines of these sources in keV.
     lines = {
         'Am241': 59.54,
         'Co57': 122.06
     }
+
+    if type(source) == str:
+        line = lines[source]
+    else:
+        line = source
 
     # Get data from gamma flood FITS file
     with fits.open(filepath) as file:
@@ -497,9 +658,6 @@ def quick_gain(filepath, source, path_constructor=path_constructor,
                 # 'spectrum' contains counts at each channel
                 spectrum, edges = np.histogram(channel, bins=bins, 
                     range=(0, maxchannel))
-                # TODO
-                # Why only take argmax of slice from 3000 to 6000 channels?
-                # Should this be a parameter to the function or hard-coded?
                 # 'centroid' is the channel with the most counts
                 centroid = np.argmax(spectrum[3000:6000]) + 3000
                 # TODO
@@ -514,19 +672,17 @@ def quick_gain(filepath, source, path_constructor=path_constructor,
                 # If we can determine the covariance matrix (which implies
                 # that the fit succeeded), then calculate this pixel's gain
                 if fit_g.fit_info['param_cov'] is not None:
-                    gain[y, x] = lines[source] / g.mean
-                    if plot:
+                    gain[y, x] = line / g.mean
+                    if save_plot:
                         plt.figure()
                         sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
                         fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
                         mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
                         frac_err = np.sqrt(np.square(fwhm_err) 
                             + np.square(g.fwhm * mean_err / g.mean)) / g.mean
-                        str_err = str(int(round(
-                            frac_err * lines[source] * 1000
-                        )))
+                        str_err = str(int(round(frac_err * line * 1000)))
                         str_fwhm = str(int(round(
-                                lines[source] * 1000 * g.fwhm/g.mean, 0
+                                line * 1000 * g.fwhm / g.mean, 0
                         )))
                         plt.text(
                             maxchannel * 3 / 5, spectrum[centroid] * 3 / 5, 
@@ -587,10 +743,16 @@ def gain_correct(filepath, gain):
 # For testing, will plot a pixel map and histogram for a file of 
 # count map data.
 if __name__ == '__main__':
-    count_map = np.loadtxt('count_map_H100_Am241_-10C_0V.txt')
-    pixel_map = plot_pixel_map(count_map)
+
+    count_map = count_map('20170315_H100_gamma_Am241_-10C.0V.fits')
+    gain = quick_gain('20170315_H100_gamma_Am241_-10C.0V.fits', 'Am241',
+        detector='H100')
+    pixel_map_counts = pixel_map_counts(count_map, title='Count Map')
+    pixel_map_gain = pixel_map_gain(gain, title='Gain Map')
     histogram = plot_count_hist(count_map)
 
-    bokeh.io.output_file('count_map.html')
+
+    bokeh.io.output_file('plots.html')
+    bokeh.io.show(pixel_map_gain)
     bokeh.io.show(pixel_map)
     bokeh.io.show(histogram)
