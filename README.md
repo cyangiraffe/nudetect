@@ -10,33 +10,33 @@
 
 ### Installing
 
-Currently, the package can be crudely installed by putting the 'gamma.py' file into the directory in which you want to run data analysis scripts and then imported like any other module. An example script one might run from a jupyter notebook is as follows.
+Currently, the package can be crudely installed by putting the 'gamma.py' file into the directory in which you want to run data analysis scripts and then imported like any other module. An example script is below.
 ```python
 import numpy as np
 import gamma
-from bokeh.io import output_notebook, show
+from bokeh.io import output_file, show
 
-output_notebook()
+output_file('count_map.html')
 
-count_map = gamma_count_map('20170315_H100_gamma_Am241_-10C.0V.fits',
-                    detector='H100', source='Am241', temp='-10C',
-                    voltage='0V')
+count_map = gamma.count_map('20170315_H100_gamma_Am241_-10C.0V.fits')
 
-p = gamma.plot_pixel_map(count_map, low=4000, high=30000)
+p = gamma.bokeh_pixel_map(count_map, value_label='Counts',
+	low=4000, high=30000)
 
 show(p)
 ```
 
 ## Built With
 
-* Astropy (v. 3.0.1)
-* Numpy (v. 1.14.5)
-* Bokeh (v. 0.13.0)
+* Astropy (v. 3.0)
+* Numpy (v. 1.14)
+* Bokeh (v. 0.13)
 
 ## Authors
 
-* **Sean Pike** - *Initial script writing* - [snpike](https://github.com/snpike/)
-* **Julian Sanders** - *Editing scripts and incorporating interactive plots* - [colcaboose](https://github.com/colcaboose)
+* **Hiromasa Miyasaka** - *Wrote original IDL scripts*
+* **Sean Pike** - *Wrote scripts in Python* - [snpike](https://github.com/snpike/)
+* **Julian Sanders** - *Documentation, organization, and incorporating Bokeh plots* - [colcaboose](https://github.com/colcaboose)
 
 ## License
 
