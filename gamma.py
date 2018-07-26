@@ -1,8 +1,5 @@
 '''
 Module with functions for analysis of gamma flood data.
-PH: Pulse height
-STIM: Mask value. If 1, event is from voltage pulse, not photon. (Usually applied to pixel (10, 10))
-UP: micro pluse -- also a mask (in noise)
 '''
 
 # Packages for making life easier
@@ -14,12 +11,12 @@ import numpy as np
 from astropy.io import fits
 from astropy.modeling import models, fitting
 
-# Bokeh for interactive plots (v. 0.13.0 at time of writing)
+# Bokeh for saveable interactive plots (v. 0.13.0 at time of writing)
 import bokeh.io
 import bokeh.plotting
 import bokeh.models as bm
 
-# Matplotlib for static plots
+# Matplotlib for static, LaTeXable plots
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.gridspec import GridSpec
@@ -43,16 +40,19 @@ class Line:
             When searching the channel spectrum for peaks, channels above
             'chan_high' will be ignored.
     '''
-    def __init__(self, source, energy, chan_low, chan_high):
+    def __init__(self, source, energy, chan_low, chan_high, latex):
         self.source = source
         self.energy = energy
         self.chan_low = chan_low
         self.chan_high = chan_high
+        self.latex = latex
 
 # Defining 'Line' instances for Am241 and Co57. 
-am = Line('Am241', 59.54, chan_low=3000, chan_high=6000)
+am = Line('Am241', 59.54, chan_low=3000, chan_high=6000,
+    latex=r'')
 # Co57's 'chan_low' and 'chan_high' attributes have not been tested.
-co = Line('Co57', 122.06, chan_low=5000, chan_high=8000)
+co = Line('Co57', 122.06, chan_low=5000, chan_high=8000,
+    latex=r'')
 
 
 def construct_path(filepath,  description='', etc='', ext='', save_dir='',
