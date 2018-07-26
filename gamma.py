@@ -1,5 +1,7 @@
 '''
-Module with functions for analysis of gamma flood data.
+Module with functions for analysis of gamma flood data. If running this 
+file as a script, it will run a complete data analysis pipeline on the
+supplied gamma flood data.
 '''
 
 # Packages for making life easier
@@ -11,16 +13,15 @@ import numpy as np
 from astropy.io import fits
 from astropy.modeling import models, fitting
 
-# Bokeh for saveable interactive plots (v. 0.13.0 at time of writing)
-import bokeh.io
-import bokeh.plotting
-import bokeh.models as bm
-
-# Matplotlib for static, LaTeXable plots
+# Plotting packages
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib.gridspec import GridSpec
 import seaborn as sns
+
+
+sns.set_context('talk')
+sns.set_style("ticks")
+sns.set_palette("colorblind")
 
 class Line:
     '''
@@ -49,10 +50,15 @@ class Line:
 
 # Defining 'Line' instances for Am241 and Co57. 
 am = Line('Am241', 59.54, chan_low=3000, chan_high=6000,
-    latex=r'')
+    latex=r'${}^{241}{\rm Am}$')
 # Co57's 'chan_low' and 'chan_high' attributes have not been tested.
 co = Line('Co57', 122.06, chan_low=5000, chan_high=8000,
-    latex=r'')
+    latex=r'${}^{57}{\rm Co}$')
+
+# TODO 
+# Make a class that contains information about plot titles?
+# Also maybe make path construction object oriented. These things might
+# drastically reduce the number of parameters needed.
 
 
 def construct_path(filepath,  description='', etc='', ext='', save_dir='',
@@ -208,7 +214,7 @@ def count_map(filepath, save=True, path_constructor=construct_path,
     if save:
         save_path = path_constructor(filepath, ext=ext,
             save_dir=save_dir, sep_by_detector=sep_by_detector, 
-            detector=detector, etc=etc)
+            detector=detector, etc=etc, description='count_data')
 
     # Get data from gamma flood FITS file
     with fits.open(filepath) as file:
@@ -248,310 +254,6 @@ def count_map(filepath, save=True, path_constructor=construct_path,
         np.savetxt(save_path, count_map)
 
     return count_map
-
-
-def bokeh_pixel_map(values, value_label, title='Pixel Map', 
-    plot_width=650, plot_height=600, low=None, high=None, low_color='grey', 
-    high_color='red', palette='Viridis256', save=True, 
-    path_constructor=construct_path, filepath='', etc='', save_dir='', 
-    sep_by_detector=False, detector=''):
-    '''
-    Plots a heat map of 'values' across the detector pixels.
-
-    Arguments:
-        values: 2D array
-            A 32 x 32 array of numbers.
-        value_label: str
-            A short label denoting what data is supplied in 'values'.
-            In the hover tooltip, the pixel's value will be labelled with 
-            this string. E.g., if value_label = 'Counts', the tooltip might
-            read 'Counts: 12744'. The color bar title is also set to this 
-            value. Also, value_label.lower() is prepended to the file name
-            if saving the plot.
-
-    Kwargs for Bokeh plot formatting:
-        title: str
-            The title displayed on the plot.
-            (default: 'Pixel Map')
-        plot_width: int
-            The width of the plot in pixels
-            (default: 650)
-        plot_height: int
-            The height of the plot in pixels
-            (default: 600)
-        low: int or float
-            The value below which elements of values are mapped to the
-            lowest color.
-            (default: lowest non-zero value in values)
-        high: int or float
-            The value above which elements of values are mapped to the
-            highest color.
-            (default: largest non-zero value in values)
-        low_color: str or 3-tuple of ints or 4-tuple(int, int, int, float)
-            Color to be used if data is lower than low value. If None,
-            values lower than low are mapped to the first color in the
-            palette. If str, must be either a hex string starting with '#' 
-            or a named SVG color. If a tuple, can be an RGB 3-tuple or an
-            RGBA 4-tuple. For details,
-            https://bokeh.pydata.org/en/latest/docs/reference/core/
-            properties.html#bokeh.core.properties.Color
-            (default: 'grey')
-        high_color: str or 3-tuple of ints or 4-tuple(int, int, int, float)
-            Color to be used if data is higher than 'high' value. If None, 
-            values higher than 'high' are mapped to the last color in the 
-            palette. See 'low_color' for help formatting this parameter.
-            (default: 'red')
-        palette: str or sequence
-            A sequence of colors to use as the target palette for mapping.
-            This property can also be set as a String, to the name of any 
-            of the palettes shown in bokeh.palettes. For example, you could
-            also set the palette to 'Inferno256', 'Magma256', or 'Plamsa256'.
-            (default: 'Viridis256')
-
-    Kwargs for saving the plot to a file:
-        save: bool
-            If True, saves the Bokeh plot as an HTML file.
-        filepath: str
-            This string will form the basis for the file name in the path 
-            returned by this function. If a path is supplied here, the 
-            file name sans extension will be trimmed out and used.
-        path_constructor: function
-            A function that takes the same parameters as the function
-            'gamma.construct_path' that returns a string representing a 
-            path to which the file will be saved.
-            (default: gamma.construct_path)
-        etc: str 
-            Other important information. Will be appended to the file name.
-            (default: '')
-        save_dir: str
-            The directory to which the count_map file will be saved. If left
-            unspecified, the file will be saved to the current directory.
-            (default: '')
-        sep_by_detector: bool
-            If True, constructs the file path such that the file is saved in 
-            a subdirectory of 'save_dir' named according to the string 
-            passed for 'detector'. Setting this to 'True' makes 'detector' a 
-            required kwarg.
-            (default: False)
-        detector: str
-            The detector ID
-
-    Return:
-        A bokeh.plotting.Figure object with a heat map of 'values'
-        plotted. 
-    '''
-    # Generate a save path, if needed.
-    if save:
-        description = (value_label.lower() + '_map').replace(' ', '_')
-        save_path = path_constructor(filepath, ext='.html', 
-            description=description, save_dir=save_dir, etc=etc, 
-            sep_by_detector=sep_by_detector, detector=detector)
-
-    # Put data in a ColumnDataSource object such that data will display
-    # correctly upon hovering over a pixel.
-    source = bm.ColumnDataSource(data={
-        'x': [0.5],
-        'y': [0.5],
-        'values': [values]
-    })
-
-    # Format of the tooltip when hovering over a pixel.
-    tooltips = [
-        ('(x, y)', '($x{g}, $y{g})'),
-        (value_label, '@values')
-    ]
-
-    # Generates the figure canvas 'p'
-    p = bokeh.plotting.figure(plot_width=plot_width, plot_height=plot_height,
-        x_range=(0.5, 32.5), y_range=(0.5, 32.5),
-        tools='pan,wheel_zoom,box_zoom,save,reset,hover',
-        tooltips=tooltips, toolbar_location='above', title=title)
-
-    # Set heatmap axes to have tick intervals scale by a factor of 2.
-    # This causes the 32nd pixel to have its own tick. 
-    axis_ticker = bm.AdaptiveTicker(max_interval=None, min_interval=1, 
-        num_minor_ticks=0, mantissas=[2], base=2)
-    p.xaxis.ticker = axis_ticker
-    p.yaxis.ticker = axis_ticker
-
-    # If not specified, assign values to 'high' and 'low' based on data.
-    if (not low) or (not high):
-        flat_counts = values.flatten()
-        flat_counts = np.ma.masked_values(flat_counts, 0)
-    if not low:
-        low = np.amin(flat_counts)
-    if not high:
-        high = np.amax(flat_counts)
-
-    # Formatting the color bar
-    color_mapper = bm.LinearColorMapper(palette=palette, 
-    low=low, high=high, low_color=low_color, high_color=high_color)
-
-    cb_ticker = bm.AdaptiveTicker()
-
-    color_bar = bm.ColorBar(location=(0, 0), ticker=cb_ticker,
-        label_standoff=8, color_mapper=color_mapper,
-        title=value_label, title_standoff=12)
-
-    p.add_layout(color_bar, 'right')
-
-    # Generates the heatmap itself
-    p.image(source=source, image='values', x='x', y='y', dw=32, dh=32,
-        color_mapper=color_mapper)
-
-    if save:
-        bokeh.io.save(p, filename=save_path)
-
-    return p
-
-
-def mpl_pixel_map(values, value_label, title='', save=True, filepath='', 
-    path_constructor=construct_path, etc='', ext='.eps', save_dir='', 
-    sep_by_detector=False, detector=''):
-    '''
-    Construct a heatmap of counts across the detector using matplotlib.
-
-    Arguments:
-        values: 2D array
-            A 32 x 32 array of numbers.
-        value_label: str
-            A short label denoting what data is supplied in 'values'.
-            In the hover tooltip, the pixel's value will be labelled with 
-            this string. E.g., if value_label = 'Counts', the tooltip might
-            read 'Counts: 12744'. The color bar title is also set to this 
-            value. Also, value_label.lower() is prepended to the file name
-            if saving the plot.
-
-    Keyword Arguments:
-        title: str
-            The title displayed on the plot.
-            (default: 'Pixel Map')
-        save: bool
-            If True, saves the Bokeh plot as an HTML file.
-        filepath: str
-            This string will form the basis for the file name in the path 
-            returned by this function. If a path is supplied here, the 
-            file name sans extension will be trimmed out and used.
-        path_constructor: function
-            A function that takes the same parameters as the function
-            'gamma.construct_path' that returns a string representing a 
-            path to which the file will be saved.
-            (default: gamma.construct_path)
-        etc: str 
-            Other important information. Will be appended to the file name.
-            (default: '')
-        save_dir: str
-            The directory to which the count_map file will be saved. If left
-            unspecified, the file will be saved to the current directory.
-            (default: '')
-        sep_by_detector: bool
-            If True, constructs the file path such that the file is saved in 
-            a subdirectory of 'save_dir' named according to the string 
-            passed for 'detector'. Setting this to 'True' makes 'detector' a 
-            required kwarg.
-            (default: False)
-        detector: str
-            The detector ID
-
-    '''
-    # Generate a save path, if needed.
-    if save:
-        description = (value_label.lower() + '_map').replace(' ', '_')
-        save_path = path_constructor(filepath, ext=ext, 
-            description=description, save_dir=save_dir, etc=etc, 
-            sep_by_detector=sep_by_detector, detector=detector)
-
-    plt.figure()
-    masked = np.ma.masked_values(values, 0.0)
-    current_cmap = mpl.cm.get_cmap()
-    current_cmap.set_bad(color='gray')
-    plt.imshow(masked)
-    c = plt.colorbar()
-    c.set_label(value_label)
-    plt.title(title)
-    plt.tight_layout()
-
-    if save:
-        plt.savefig(save_path)
-
-    plt.show()
-    plt.close()
-
-
-def bokeh_hist(count_map, bins=100, plot_width=600, plot_height=500,
-    title='Count Histogram', save=True, filepath='', save_dir='', etc='',
-    path_constructor=construct_path, sep_by_detector=False, detector=''):
-    '''
-    Plots a count histogram with respect to the pixels.
-
-    Arguments:
-        count_map: 2D array
-            A 32 x 32 array of numbers. Each entry represents the number of
-            counts read by the detector pixel at the corresponding index.
-
-    Keyword Arguments:
-        bins : int or sequence of scalars or str, optional
-            If `bins` is an int, it defines the number of equal-width
-            bins in the given range (10, by default). If `bins` is a
-            sequence, it defines the bin edges, including the rightmost
-            edge, allowing for non-uniform bin widths.
-            For information about str values of 'bins', see the numpy
-            documentation of the parameter with 'help(np.histogram)'.
-        plot_width: int
-            The width of the plot in pixels
-            (default: 600)
-        plot_height: int
-            The height of the plot in pixels
-            (default: 500)
-        title: str
-            The title displayed on the plot.
-            (default: 'Count Histogram')
-    '''
-    # Generating a save path, if needed.
-    if save:
-        save_path = path_constructor(filepath, ext='.html', etc=etc, save_dir=save_dir, description='count_hist', sep_by_detector=sep_by_detector, detector=detector)
-
-    # Binning the data
-    counts = count_map.flatten()
-    hist, edges = np.histogram(count_map, bins=bins)
-
-    # Generating the Figure object 'p'
-    p = bokeh.plotting.figure(plot_width=plot_width, plot_height=plot_height,
-        title=title, x_axis_label='Counts', y_axis_label='Number of Pixels')
-
-    # Plotting rectangular glyphs for bins.
-    p.quad(left=edges[:-1], right=edges[1:], top=hist, bottom=0)
-
-    if save:
-        bokeh.io.save(p, filename=save_path)
-
-    return p
-
-
-def mpl_hist(count_map, bins=100, title='Count Histogram', save=True, 
-    filepath='', etc='', ext='.eps', path_constructor=construct_path, 
-    save_dir='', sep_by_detector=False, detector=''):
-
-    # Generate a save path, if needed.
-    if save:
-        save_path = path_constructor(filepath, ext=ext, etc=etc,
-            description='count_hist', save_dir=save_dir, 
-            sep_by_detector=sep_by_detector, detector=detector)
-
-    plt.figure()
-    plt.hist(np.array(count_map).flatten(), bins=bins, 
-        range=(0, np.max(count_map) + 1), 
-        histtype='stepfilled')
-    plt.ylabel('Pixels')
-    plt.xlabel('Counts')
-    plt.title(title)
-    plt.tight_layout()
-
-    if save:
-        plt.savefig(save_path)
-
-    plt.show()
-    plt.close()
 
 
 def quick_gain(filepath, line, path_constructor=construct_path, 
@@ -615,7 +317,7 @@ def quick_gain(filepath, line, path_constructor=construct_path,
 
     if save_data:
         data_path = path_constructor(filepath=filepath, ext=data_ext,
-            description='gain', sep_by_detector=data_sep_by_detector,
+            description='gain_data', sep_by_detector=data_sep_by_detector,
             detector=detector, etc=etc)
 
     if save_plot:
@@ -927,7 +629,7 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
         +  display_fwhm + r'$\pm$' + display_err + ' eV', 
         fontsize=13)
 
-    plt.plot(spectrum[1], spectrum[0], label = r'${}^{241}{\rm Am}$')
+    plt.plot(spectrum[1], spectrum[0], label=line.latex)
     plt.plot(spectrum[1, fit_channels], g(fit_channels), 
         label = 'Gaussian fit')
     plt.xlabel('Energy (keV)')
@@ -941,8 +643,137 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     plt.close()
 
 
-# TODO
-# If this file is run from the terminal, the code below will run all the 
-# above functions in a pipeline.
+def mpl_pixel_map(values, value_label, title='', save=True, filepath='', 
+    path_constructor=construct_path, etc='', ext='.eps', save_dir='', 
+    sep_by_detector=False, detector=''):
+    '''
+    Construct a heatmap of counts across the detector using matplotlib.
+
+    Arguments:
+        values: 2D array
+            A 32 x 32 array of numbers.
+        value_label: str
+            A short label denoting what data is supplied in 'values'.
+            In the hover tooltip, the pixel's value will be labelled with 
+            this string. E.g., if value_label = 'Counts', the tooltip might
+            read 'Counts: 12744'. The color bar title is also set to this 
+            value. Also, value_label.lower() is prepended to the file name
+            if saving the plot.
+
+    Keyword Arguments:
+        title: str
+            The title displayed on the plot.
+            (default: 'Pixel Map')
+        save: bool
+            If True, saves the Bokeh plot as an HTML file.
+        filepath: str
+            This string will form the basis for the file name in the path 
+            returned by this function. If a path is supplied here, the 
+            file name sans extension will be trimmed out and used.
+        path_constructor: function
+            A function that takes the same parameters as the function
+            'gamma.construct_path' that returns a string representing a 
+            path to which the file will be saved.
+            (default: gamma.construct_path)
+        etc: str 
+            Other important information. Will be appended to the file name.
+            (default: '')
+        save_dir: str
+            The directory to which the count_map file will be saved. If left
+            unspecified, the file will be saved to the current directory.
+            (default: '')
+        sep_by_detector: bool
+            If True, constructs the file path such that the file is saved in 
+            a subdirectory of 'save_dir' named according to the string 
+            passed for 'detector'. Setting this to 'True' makes 'detector' a 
+            required kwarg.
+            (default: False)
+        detector: str
+            The detector ID
+
+    '''
+    # Generate a save path, if needed.
+    if save:
+        description = (value_label.lower() + '_map').replace(' ', '_')
+        save_path = path_constructor(filepath, ext=ext, 
+            description=description, save_dir=save_dir, etc=etc, 
+            sep_by_detector=sep_by_detector, detector=detector)
+
+    plt.figure()
+    masked = np.ma.masked_values(values, 0.0)
+    current_cmap = mpl.cm.get_cmap()
+    current_cmap.set_bad(color='gray')
+    plt.imshow(masked)
+    c = plt.colorbar()
+    c.set_label(value_label)
+    plt.title(title)
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(save_path)
+
+
+def mpl_hist(count_map, bins=100, title='Count Histogram', save=True, 
+    filepath='', etc='', ext='.eps', path_constructor=construct_path, 
+    save_dir='', sep_by_detector=False, detector=''):
+
+    # Generate a save path, if needed.
+    if save:
+        save_path = path_constructor(filepath, ext=ext, etc=etc,
+            description='count_hist', save_dir=save_dir, 
+            sep_by_detector=sep_by_detector, detector=detector)
+
+    plt.figure()
+    plt.hist(np.array(count_map).flatten(), bins=bins, 
+        range=(0, np.max(count_map) + 1), 
+        histtype='stepfilled')
+    plt.ylabel('Pixels')
+    plt.xlabel('Counts')
+    plt.title(title)
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(save_path)
+
+
+# If this file is run as a script, the code below will a complete pipeline
+# for gamma flood data analysis with default parameter values.
 if __name__ == '__main__':
-    pass
+
+    filepath = input('Enter the filepath to the gamma flood data: ')
+    source = input('Enter the name of the source used (Am241 or Co57): ')
+
+    # Getting the 'Line' instance that corresponds to 'source'.
+    if source.lower() == am.source.lower():
+        line = am
+    elif source.lower() == co.source.lower():
+        line = co
+    else:
+        raise ValueError('''
+            This module doesn't explicitly support that source yet. To 
+            specify a custom source, instantiate a 'Line' object and pass
+            it to the 'quick_gain' and 'plot_spectrum' functions where 
+            indicated.
+        ''')
+
+    detector = input('Enter the detector ID: ')
+
+    # Processing data
+    print('Calculating count data...')
+    count_map = count_map(filepath)
+    print('Calculating gain data...')
+    gain = quick_gain(filepath, line, detector=detector)
+    print('Calculating the energy spectrum...')
+    spectrum = get_spectrum(filepath, gain)
+
+    # Plotting
+    print('Plotting...')
+    plot_spectrum(spectrum, line, filepath=filepath)
+
+    mpl_hist(count_map, filepath=filepath)
+
+    mpl_pixel_map(count_map, 'Counts', filepath=filepath)
+    
+    mpl_pixel_map(gain, 'Gain', filepath=filepath)
+
+    print('Done!')

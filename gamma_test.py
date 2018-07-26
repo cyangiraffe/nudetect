@@ -1,5 +1,7 @@
 '''
-A testing module for gamma.py
+A testing module for gamma.py. This is a pretty awful testing module
+and probably isn't work using. Best to run 'gamma.py' as a script and 
+inspect the outputs.
 '''
 
 import bokeh.io
