@@ -7,6 +7,7 @@ UP: micro pluse -- also a mask (in noise)
 
 # Packages for making life easier
 import os.path
+import string
 
 # Data analysis packages
 import numpy as np
@@ -122,7 +123,14 @@ def construct_path(filepath,  description='', etc='', ext='', save_dir='',
 
     # Construct the file name from the file name in 'filepath'.
     filename = os.path.basename(filepath)
-    save_path = os.path.splitext(filename)[0].replace('.', '_')
+    save_path = os.path.splitext(filename)[0]
+
+    # Map all whitespace characters and '.' to underscores
+    trans = str.maketrans(
+        '.' + string.whitespace, 
+        '_' * (len(string.whitespace) + 1)
+    )
+    save_path = save_path.translate(trans)
     
     # Prepend the description if specified
     if description:
@@ -198,7 +206,7 @@ def count_map(filepath, save=True, path_constructor=construct_path,
     '''
     # Generating the save path, if needed.
     if save:
-        save_path = path_constructor(filepath, ext=ext
+        save_path = path_constructor(filepath, ext=ext,
             save_dir=save_dir, sep_by_detector=sep_by_detector, 
             detector=detector, etc=etc)
 
@@ -565,19 +573,39 @@ def quick_gain(filepath, line, path_constructor=construct_path,
             If true, plots and energy spectrum for each pixel and saves
             the figure.
             (default: True)
-        save_data: bool 
-            If True, saves count_map as a .txt file.
-            (default: True)
-        save_dir: str
-            The directory to which the count_map file will be saved. If left
+        plot_dir: str
+            The directory to which the plot file will be saved. If left
             unspecified, the file will be saved to the current directory.
             (default: '')
-        ext: str
-            The file name extension for the count_map file. 
+        plot_ext: str
+            The file name extension for the plot file.
+            (default: '.eps')  
+        plot_sep_by_detector: bool
+            If True, the plot file is saved in a subdirectory of 'save_dir' 
+            named according to the string passed for 'detector'. Setting 
+            this to 'True' makes 'detector' a required kwarg.
+            (default: True)
+        save_data: bool 
+            If True, saves gain data as a .txt file.
+            (default: True)
+        data_dir: str
+            The directory to which the gain file will be saved. If left
+            unspecified, the file will be saved to the current directory.
+            (default: '')
+        data_ext: str
+            The file name extension for the gain file. 
             (default: '.txt')
+        data_sep_by_detector: bool
+            If True, the gain file is saved in a subdirectory of 'save_dir' 
+            named according to the string passed for 'detector'. Setting 
+            this to 'True' makes 'detector' a required kwarg.
+            (default: False)
         etc: str 
             Other important information
             (default: '')
+        detector: str
+            The detector ID. Required if either 'plot_sep_by_detector' or 
+            'data_sep_by_detector' is True.
 
     Return:
         gain: 2D numpy.ndarray
@@ -789,7 +817,7 @@ def get_spectrum(filepath, gain, bins=10000, energy_range=(0.01, 120),
         col = event['RAWX']
         temp = event['PH_COM'].reshape(3, 3)
         mask = (temp > 0).astype(int)
-        energy_list.append(np.sum(
+        energies.append(np.sum(
             np.multiply(
                 np.multiply(mask, temp), 
                 gain[row:row + 3, col:col + 3])
@@ -817,16 +845,60 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     path_constructor=construct_path, filepath='', etc='', ext='.eps', 
     save_dir='', sep_by_detector=False, detector=''):
     '''
-    Fits and plots the spectrum returned from 'get_spectrum'.
+    Fits and plots the spectrum returned from 'get_spectrum'. To show the 
+    plot with an interactive interface, call 'plt.show()' right after 
+    calling this function.
+
+    Arguments:
+        spectrum: 2D numpy.ndarray
+            This array represents a histogram wrt the energy of an event.
+            spectrum[0] is a 1D array of counts in each bin, and spectrum[1] 
+            is a 1D array of the middle enegies of each bin in keV. E.g., if 
+            the ith bin counted events between 2 keV and 4 keV, then the 
+            value of spectrum[1, i] is 3.
+        line: an instance of Line
+            The attributes of 'line' will provide information for fitting.
+
+    Keyword Arguments:
+        save:
+            If True, 'spectrum' will be saved as an ascii file. Parameters 
+            relevant to this saving are below
+        path_constructor: function
+            A function that takes the same parameters as the function
+            'gamma.construct_path' that returns a string representing a 
+            path to which the file will be saved.
+            (default: gamma.construct_path)
+        filepath: str
+            This string will form the basis for the file name in the path 
+            returned by this function. If a path is supplied here, the 
+            file name sans extension will be trimmed out and used.
+        etc: str 
+            Other important information to go in the filename.
+            (default: '')
+        save_dir: str
+            The directory to which the  file will be saved. If left
+            unspecified, the file will be saved to the current directory.
+            (default: '')
+        sep_by_detector: bool
+            If True, constructs the file path such that the file is saved in 
+            a subdirectory of 'save_dir' named according to the string 
+            passed for 'detector'. Setting this to 'True' makes 'detector' a 
+            required kwarg.
+            (default: False)
+        detector: str
+            The detector ID. Required if sep_by_detector == True.
+        ext: str
+            The file name extension for the count_map file. 
+            (default: '.eps')
+
     '''
-    maxchannel = 10000
-
-
     # Constructing a save path, if needed
     if save:
         save_path = path_constructor(ext=ext, filepath=filepath, 
             save_dir=save_dir, sep_by_detector=sep_by_detector, 
             detector=detector, etc=etc, description='energy_spectrum')
+
+    maxchannel = 10000
 
     # 'centroid' is the bin with the most counts
     centroid = np.argmax(spectrum[0, 1000:]) + 1000
@@ -839,8 +911,6 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     fit_g = fitting.LevMarLSQFitter()
     g = fit_g(g_init, fit_channels, spectrum[0, fit_channels])
 
-    print(np.diag(fit_g.fit_info['param_cov']))
-
     sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
     fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
     mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
@@ -848,11 +918,6 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
         np.square(fwhm_err) 
         + np.square(g.fwhm * mean_err / g.mean)
     ) / g.mean
-
-    print(g.fwhm / g.mean)
-    print(frac_err)
-    print(line.energy * g.fwhm / g.mean)
-    print(frac_err * line.energy)
 
     # Displaying the FWHM on the spectrum plot, with error.
     display_fwhm = str(int(round(line.energy * 1000 * g.fwhm / g.mean, 0)))
@@ -862,7 +927,7 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
         +  display_fwhm + r'$\pm$' + display_err + ' eV', 
         fontsize=13)
 
-    plt.plot(spectrum[1, :-1], spectrum[0], label = r'${}^{241}{\rm Am}$')
+    plt.plot(spectrum[1], spectrum[0], label = r'${}^{241}{\rm Am}$')
     plt.plot(spectrum[1, fit_channels], g(fit_channels), 
         label = 'Gaussian fit')
     plt.xlabel('Energy (keV)')
@@ -873,29 +938,11 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     plt.tight_layout()
     if save:
         plt.savefig(save_path)
-    plt.show()
     plt.close()
 
 
+# TODO
 # If this file is run from the terminal, the code below will run all the 
 # above functions in a pipeline.
 if __name__ == '__main__':
-
-    # Temporary value. Will change to request input at command prompt.
-    filepath = '20170315_H100_gamma_Am241_-10C.0V.fits'
-
-    # Generating data
-    count_map = count_map(filepath)
-    gain = quick_gain(filepath, 'Am241', detector='H100')
-    energy_list = gain_correct(filepath, gain)
-
-    # Plotting and fitting data
-    pixel_map_counts = pixel_map_counts(count_map, title='Count Map')
-    pixel_map_gain = pixel_map_gain(gain, title='Gain Map')
-    histogram = plot_count_hist(count_map)
-
-    # Displaying plots
-    bokeh.io.output_file('plots.html')
-    bokeh.io.show(pixel_map_gain)
-    bokeh.io.show(pixel_map)
-    bokeh.io.show(histogram)
+    pass
