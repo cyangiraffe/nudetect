@@ -643,7 +643,7 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     plt.close()
 
 
-def mpl_pixel_map(values, value_label, title='', save=True, filepath='', 
+def pixel_map(values, value_label, title='', save=True, filepath='', 
     path_constructor=construct_path, etc='', ext='.eps', save_dir='', 
     sep_by_detector=False, detector=''):
     '''
@@ -713,7 +713,7 @@ def mpl_pixel_map(values, value_label, title='', save=True, filepath='',
         plt.savefig(save_path)
 
 
-def mpl_hist(count_map, bins=100, title='Count Histogram', save=True, 
+def count_hist(count_map, bins=100, title='Count Histogram', save=True, 
     filepath='', etc='', ext='.eps', path_constructor=construct_path, 
     save_dir='', sep_by_detector=False, detector=''):
 
