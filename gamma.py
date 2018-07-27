@@ -61,8 +61,7 @@ co = Line('Co57', 122.06, chan_low=5000, chan_high=8000,
 # drastically reduce the number of parameters needed.
 
 
-def construct_path(filepath,  description='', etc='', ext='', save_dir='',
-    sep_by_detector=False, detector=''):
+def construct_path(filepath,  description='', etc='', ext='', save_dir=''):
     '''
     Constructs a path for saving data and figures based on user input. The 
     main use of this function is for other functions in this package to use 
@@ -95,14 +94,6 @@ def construct_path(filepath,  description='', etc='', ext='', save_dir='',
             The directory to which the file will be saved. If left
             unspecified, the file will be saved to the current directory.
             (default: '')
-        sep_by_detector: bool
-            If True, constructs the file path such that the file is saved in 
-            a subdirectory of 'save_dir' named according to the string 
-            passed for 'detector'. Setting this to 'True' makes 'detector' a 
-            required kwarg.
-            (default: False)
-        detector: str
-            The detector ID.
 
     Return:
         save_path: str
@@ -116,12 +107,7 @@ def construct_path(filepath,  description='', etc='', ext='', save_dir='',
         ext = f'.{ext}'
 
     # Check that the save directory exists
-    if save_dir and sep_by_detector:
-        if not os.path.exists(f'{save_dir}/{detector}'):
-            raise ValueError(
-                f'The directory \'{save_dir}/{detector}\' does not exist.'
-            )
-    elif save_dir:
+    if save_dir:
         if not os.path.exists(save_dir):
             raise ValueError(f'The directory \'{save_dir}\' does not exist.')
 
@@ -150,26 +136,15 @@ def construct_path(filepath,  description='', etc='', ext='', save_dir='',
     # Append the file extension
     save_path += ext
 
-    # Prepend the detector directory if desired
-    if sep_by_detector:
-        if not detector:
-            raise Exception('''
-                Since 'sep_by_detector' is True, a value must be supplied
-                for the kwarg 'detector'.
-            ''')
-
-        save_path = f'{detector}/{save_path}'
-
     # Prepend the save directory if specified
     if save_dir:
         save_path = f'{save_dir}/{save_path}'
-
 
     return save_path
 
 
 def count_map(filepath, save=True, path_constructor=construct_path,
-    etc='', ext='.txt', save_dir='', sep_by_detector=False, detector=''):
+    etc='', ext='.txt', save_dir=''):
     '''
     Generates event count data for each pixel for raw gamma flood data.
 
@@ -193,14 +168,6 @@ def count_map(filepath, save=True, path_constructor=construct_path,
             The directory to which the count_map file will be saved. If left
             unspecified, the file will be saved to the current directory.
             (default: '')
-        sep_by_detector: bool
-            If True, constructs the file path such that the file is saved in 
-            a subdirectory of 'save_dir' named according to the string 
-            passed for 'detector'. Setting this to 'True' makes 'detector' a 
-            required kwarg.
-            (default: False)
-        detector: str
-            The detector ID
         ext: str
             The file name extension for the count_map file. 
             (default: '.txt')
@@ -213,8 +180,7 @@ def count_map(filepath, save=True, path_constructor=construct_path,
     # Generating the save path, if needed.
     if save:
         save_path = path_constructor(filepath, ext=ext,
-            save_dir=save_dir, sep_by_detector=sep_by_detector, 
-            detector=detector, etc=etc, description='count_data')
+            save_dir=save_dir, etc=etc, description='count_data')
 
     # Get data from gamma flood FITS file
     with fits.open(filepath) as file:
@@ -257,9 +223,9 @@ def count_map(filepath, save=True, path_constructor=construct_path,
 
 
 def quick_gain(filepath, line, path_constructor=construct_path, 
-    save_plot=True, plot_dir='', plot_ext='.eps', plot_sep_by_detector=True, 
-    save_data=True, data_dir='', data_ext='.txt', data_sep_by_detector=False,
-    etc='', detector=''):
+    save_plot=True, plot_dir='', plot_ext='.eps', 
+    save_data=True, data_dir='', data_ext='.txt',
+    etc=''):
     '''
     Generates gain correction data from the raw gamma flood event data.
     Currently, the fitting done might fail for sources other than Am241.
@@ -282,11 +248,6 @@ def quick_gain(filepath, line, path_constructor=construct_path,
         plot_ext: str
             The file name extension for the plot file.
             (default: '.eps')  
-        plot_sep_by_detector: bool
-            If True, the plot file is saved in a subdirectory of 'save_dir' 
-            named according to the string passed for 'detector'. Setting 
-            this to 'True' makes 'detector' a required kwarg.
-            (default: True)
         save_data: bool 
             If True, saves gain data as a .txt file.
             (default: True)
@@ -297,17 +258,9 @@ def quick_gain(filepath, line, path_constructor=construct_path,
         data_ext: str
             The file name extension for the gain file. 
             (default: '.txt')
-        data_sep_by_detector: bool
-            If True, the gain file is saved in a subdirectory of 'save_dir' 
-            named according to the string passed for 'detector'. Setting 
-            this to 'True' makes 'detector' a required kwarg.
-            (default: False)
         etc: str 
             Other important information
             (default: '')
-        detector: str
-            The detector ID. Required if either 'plot_sep_by_detector' or 
-            'data_sep_by_detector' is True.
 
     Return:
         gain: 2D numpy.ndarray
@@ -317,12 +270,11 @@ def quick_gain(filepath, line, path_constructor=construct_path,
 
     if save_data:
         data_path = path_constructor(filepath=filepath, ext=data_ext,
-            description='gain_data', sep_by_detector=data_sep_by_detector,
-            detector=detector, etc=etc)
+            description='gain_data', etc=etc)
 
     if save_plot:
         plot_path = path_constructor(filepath=filepath, description='gain',
-            sep_by_detector=plot_sep_by_detector, detector=detector, etc=etc)
+            etc=etc)
 
 
     # Get data from gamma flood FITS file
@@ -432,8 +384,8 @@ def quick_gain(filepath, line, path_constructor=construct_path,
 
 
 def get_spectrum(filepath, gain, bins=10000, energy_range=(0.01, 120), 
-    path_constructor=construct_path, save=True, ext='.txt', save_dir='', 
-    sep_by_detector=False, detector='', etc=''):
+    path_constructor=construct_path, save=True, ext='.txt', save_dir='',
+    etc=''):
     '''
     Applies gain correction to get energy data, and then bins the events
     by energy to obtain a spectrum.
@@ -465,14 +417,6 @@ def get_spectrum(filepath, gain, bins=10000, energy_range=(0.01, 120),
             The directory to which the  file will be saved. If left
             unspecified, the file will be saved to the current directory.
             (default: '')
-        sep_by_detector: bool
-            If True, constructs the file path such that the file is saved in 
-            a subdirectory of 'save_dir' named according to the string 
-            passed for 'detector'. Setting this to 'True' makes 'detector' a 
-            required kwarg.
-            (default: False)
-        detector: str
-            The detector ID. Required if sep_by_detector == True.
         ext: str
             The file name extension for the count_map file. 
             (default: '.txt')
@@ -488,8 +432,7 @@ def get_spectrum(filepath, gain, bins=10000, energy_range=(0.01, 120),
     # Generating the save path, if needed.
     if save:
         save_path = path_constructor(ext=ext, filepath=filepath, 
-            save_dir=save_dir, sep_by_detector=sep_by_detector, 
-            detector=detector, etc=etc, description='spectrum')
+            save_dir=save_dir, etc=etc, description='spectrum')
 
     # Adding a buffer of zeros around the 'gain' array. (Note that the
     # indices will now be shifted over by one.)
@@ -545,7 +488,7 @@ def get_spectrum(filepath, gain, bins=10000, energy_range=(0.01, 120),
 
 def plot_spectrum(spectrum, line, title='Spectrum', save=True, 
     path_constructor=construct_path, filepath='', etc='', ext='.eps', 
-    save_dir='', sep_by_detector=False, detector=''):
+    save_dir=''):
     '''
     Fits and plots the spectrum returned from 'get_spectrum'. To show the 
     plot with an interactive interface, call 'plt.show()' right after 
@@ -581,14 +524,6 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
             The directory to which the  file will be saved. If left
             unspecified, the file will be saved to the current directory.
             (default: '')
-        sep_by_detector: bool
-            If True, constructs the file path such that the file is saved in 
-            a subdirectory of 'save_dir' named according to the string 
-            passed for 'detector'. Setting this to 'True' makes 'detector' a 
-            required kwarg.
-            (default: False)
-        detector: str
-            The detector ID. Required if sep_by_detector == True.
         ext: str
             The file name extension for the count_map file. 
             (default: '.eps')
@@ -597,8 +532,7 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     # Constructing a save path, if needed
     if save:
         save_path = path_constructor(ext=ext, filepath=filepath, 
-            save_dir=save_dir, sep_by_detector=sep_by_detector, 
-            detector=detector, etc=etc, description='energy_spectrum')
+            save_dir=save_dir, etc=etc, description='energy_spectrum')
 
     maxchannel = 10000
 
@@ -644,8 +578,7 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
 
 
 def pixel_map(values, value_label, title='', save=True, filepath='', 
-    path_constructor=construct_path, etc='', ext='.eps', save_dir='', 
-    sep_by_detector=False, detector=''):
+    path_constructor=construct_path, etc='', ext='.eps', save_dir=''):
     '''
     Construct a heatmap of counts across the detector using matplotlib.
 
@@ -682,22 +615,12 @@ def pixel_map(values, value_label, title='', save=True, filepath='',
             The directory to which the count_map file will be saved. If left
             unspecified, the file will be saved to the current directory.
             (default: '')
-        sep_by_detector: bool
-            If True, constructs the file path such that the file is saved in 
-            a subdirectory of 'save_dir' named according to the string 
-            passed for 'detector'. Setting this to 'True' makes 'detector' a 
-            required kwarg.
-            (default: False)
-        detector: str
-            The detector ID
-
     '''
     # Generate a save path, if needed.
     if save:
         description = (value_label.lower() + '_map').replace(' ', '_')
         save_path = path_constructor(filepath, ext=ext, 
-            description=description, save_dir=save_dir, etc=etc, 
-            sep_by_detector=sep_by_detector, detector=detector)
+            description=description, save_dir=save_dir, etc=etc)
 
     plt.figure()
     masked = np.ma.masked_values(values, 0.0)
@@ -715,13 +638,12 @@ def pixel_map(values, value_label, title='', save=True, filepath='',
 
 def count_hist(count_map, bins=100, title='Count Histogram', save=True, 
     filepath='', etc='', ext='.eps', path_constructor=construct_path, 
-    save_dir='', sep_by_detector=False, detector=''):
+    save_dir=''):
 
     # Generate a save path, if needed.
     if save:
         save_path = path_constructor(filepath, ext=ext, etc=etc,
-            description='count_hist', save_dir=save_dir, 
-            sep_by_detector=sep_by_detector, detector=detector)
+            description='count_hist', save_dir=save_dir)
 
     plt.figure()
     plt.hist(np.array(count_map).flatten(), bins=bins, 
@@ -755,14 +677,14 @@ if __name__ == '__main__':
             it to the 'quick_gain' and 'plot_spectrum' functions where 
             indicated.
         ''')
-
-    detector = input('Enter the detector ID: ')
+        
+    pixel_dir = input('Enter a directory to save pixel spectra to: ')
 
     # Processing data
     print('Calculating count data...')
     count_map = count_map(filepath)
     print('Calculating gain data...')
-    gain = quick_gain(filepath, line, detector=detector)
+    gain = quick_gain(filepath, line, save_dir=pixel_dir)
     print('Calculating the energy spectrum...')
     spectrum = get_spectrum(filepath, gain)
 
@@ -770,10 +692,10 @@ if __name__ == '__main__':
     print('Plotting...')
     plot_spectrum(spectrum, line, filepath=filepath)
 
-    mpl_hist(count_map, filepath=filepath)
+    count_hist(count_map, filepath=filepath)
 
-    mpl_pixel_map(count_map, 'Counts', filepath=filepath)
+    pixel_map(count_map, 'Counts', filepath=filepath)
     
-    mpl_pixel_map(gain, 'Gain', filepath=filepath)
+    pixel_map(gain, 'Gain', filepath=filepath)
 
     print('Done!')
