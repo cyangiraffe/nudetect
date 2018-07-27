@@ -1,9 +1,19 @@
 X-Ray Vision
 Collaborators: Sean Pike, Andrew Sosanya
-This document contains documentations for the attributes of the data FITS file found in the source code.
+This document contains documentation for the attributes of the data FITS 
+file found in the source code.
 
 
-TEMP - Lists the temeprature of the detector during each event
+TEMP:
+	Lists the temperature of the detector during each event.
+PH: 
+	Pulse height.
+PH_COM: 
+	A list of length 9 that records pulse heights of the pixels in a
+	3 x 3 grid around an event.
+STIM:
+	Indicates whether an event was caused by artificially stimulating the 
+	pixel. This was usually done to the pixel at index (10, 10).
 
 .field("RAW")
 
