@@ -37,3 +37,4 @@ show(p)
 * **Hiromasa Miyasaka** - *Wrote original IDL scripts*
 * **Sean Pike** - *Wrote scripts in Python* - [snpike](https://github.com/snpike/)
 * **Julian Sanders** - *Documentation, organization, and incorporating Bokeh plots* - [colcaboose](https://github.com/colcaboose)
+* **Andrew Sosanya** - *Documentation and logistics* - [DrewSosa](https://github.com/DrewSosa)
