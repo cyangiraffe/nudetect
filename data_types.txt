@@ -7,14 +7,15 @@ file found in the source code.
 TEMP:
 	Lists the temperature of the detector during each event.
 PH: 
-	Pulse height.
+	Pulse height. Also synonymous with the term "channel". Used to record the amount charge released from the scintillator.
 PH_COM: 
 	A list of length 9 that records pulse heights of the pixels in a
-	3 x 3 grid around an event.
+	3 x 3 grid around an event. The list is used to correct for charge spillage around the centroid event. 
 STIM:
 	Indicates whether an event was caused by artificially stimulating the 
 	pixel. This was usually done to the pixel at index (10, 10).
 
-.field("RAW")
+.field("RAW"):
+	Raw data from the detector. 
 
 .field("PM")
