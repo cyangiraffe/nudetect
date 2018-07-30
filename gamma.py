@@ -26,7 +26,10 @@ sns.set_palette("colorblind")
 class Line:
     '''
     A class for spectral lines. The infomation in each instance will help
-    supply parameters for fitting peaks.
+    supply parameters for fitting peaks. New instances can be created on 
+    the fly and instances defined in the source code can be temporarily
+    modified as needed. The data instances contain will usually be accessed
+    by the 'line' method of the 'Experiment' class.
 
     Attributes:
         source: str
@@ -41,24 +44,63 @@ class Line:
             When searching the channel spectrum for peaks, channels above
             'chan_high' will be ignored.
     '''
-    def __init__(self, source, energy, chan_low, chan_high, latex):
+    # A dict to contain all instances of 'Line'
+    lines = {}
+
+    def __init__(self, source, energy, chan_low, chan_high):
         self.source = source
         self.energy = energy
         self.chan_low = chan_low
         self.chan_high = chan_high
-        self.latex = latex
+
+        # Formating 'source' as a LaTeX string and storing it in 'self.latex'
+        sym, num = '', ''
+        for char in source:
+            if char in string.ascii_letters:
+                sym += char
+            elif char in string.digits:
+                num += char
+
+        self.latex = r'${}^{' + num + r'}{\rm' + sym + r'}'
+
+        # Add this instance to 'lines' upon instantiation
+        Line.lines[source] = self
 
 # Defining 'Line' instances for Am241 and Co57. 
-am = Line('Am241', 59.54, chan_low=3000, chan_high=6000,
-    latex=r'${}^{241}{\rm Am}$')
+am = Line('Am241', 59.54, chan_low=3000, chan_high=6000)
 # Co57's 'chan_low' and 'chan_high' attributes have not been tested.
-co = Line('Co57', 122.06, chan_low=5000, chan_high=8000,
-    latex=r'${}^{57}{\rm Co}$')
+co = Line('Co57', 122.06, chan_low=5000, chan_high=8000)
 
-# TODO 
-# Make a class that contains information about plot titles?
-# Also maybe make path construction object oriented. These things might
-# drastically reduce the number of parameters needed.
+class Experiment:
+    '''
+    A class containing important experiment parameters with methods to supply
+    data analysis functions 
+    '''
+    def __init__(self, detector, source, voltage, temp, etc=''):
+        self.detector = detector
+        self.source = source
+        self.voltage = voltage
+        self.temp = temp
+        self.etc = etc
+
+    def line():
+        '''Returns the 'Line' instance to which 'self.source' corresponds.'''
+        try:
+            return Line.lines[self.source]
+        except KeyError:
+            raise KeyError(f'''
+                There is no Line object corresponing to the source 
+                {self.source}. Call 'help(Line)' to see how to define a new
+                Line object.''')
+
+    def title(plot):
+        '''
+        Returns a plot title based on the instance's attributes and the 
+        type of plot, supplied in 'plot' as a string.
+        '''
+        temp = self.temp[:-1] + r'^{\circ}' + self.temp[-1]
+
+        return f'{self.detector} {self.source} {plot} ({self.voltage}, {temp})'
 
 
 def construct_path(filepath,  description='', etc='', ext='', save_dir=''):
@@ -222,7 +264,8 @@ def count_map(filepath, save=True, path_constructor=construct_path,
     return count_map
 
 
-def quick_gain(filepath, line, path_constructor=construct_path, 
+def quick_gain(filepath, line, fit_low=100, fit_high=200, 
+    path_constructor=construct_path, 
     save_plot=True, plot_dir='', plot_ext='.eps', 
     save_data=True, data_dir='', data_ext='.txt',
     etc=''):
@@ -237,6 +280,13 @@ def quick_gain(filepath, line, path_constructor=construct_path,
             The attributes of 'line' will provide information for fitting.
 
     Keyword Arguments:
+        fit_low: int
+            Channels this far below the centroid won't be considered in 
+            fitting a gaussian to the spectral peak. Should be smaller 
+            than 'fit_high' due to thick low-energy tails.
+        fit_high: int
+            Channels this far above the centroid won't be considered in 
+            fitting a gaussian to the spectral peak.
         save_plot: bool
             If true, plots and energy spectrum for each pixel and saves
             the figure.
@@ -311,7 +361,9 @@ def quick_gain(filepath, line, path_constructor=construct_path,
                 # interval between 'line.chan_low' and 'line.chan_high'.
                 centroid = np.argmax(spectrum[line.chan_low:line.chan_high])\
                     + line.chan_low
-                fit_channels = np.arange(centroid - 100, centroid + 200)
+                # Excluding funky tails for the fitting process.
+                fit_channels = np.arange(
+                    centroid - fit_low, centroid + fit_high)
                 g_init = models.Gaussian1D(amplitude=spectrum[centroid], 
                     mean=centroid, stddev=75)
                 fit_g = fitting.LevMarLSQFitter()
@@ -486,9 +538,9 @@ def get_spectrum(filepath, gain, bins=10000, energy_range=(0.01, 120),
     return spectrum
 
 
-def plot_spectrum(spectrum, line, title='Spectrum', save=True, 
-    path_constructor=construct_path, filepath='', etc='', ext='.eps', 
-    save_dir=''):
+def plot_spectrum(spectrum, line, fit_low=80, fit_high=150, 
+    title='Spectrum', save=True, path_constructor=construct_path, 
+    filepath='', etc='', ext='.eps', save_dir=''):
     '''
     Fits and plots the spectrum returned from 'get_spectrum'. To show the 
     plot with an interactive interface, call 'plt.show()' right after 
@@ -505,6 +557,13 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
             The attributes of 'line' will provide information for fitting.
 
     Keyword Arguments:
+        fit_low: int
+            Channels this far below the centroid won't be considered in 
+            fitting a gaussian to the spectral peak. Should be smaller 
+            than 'fit_high' due to thick low-energy tails.
+        fit_high: int
+            Channels this far above the centroid won't be considered in 
+            fitting a gaussian to the spectral peak.
         save:
             If True, 'spectrum' will be saved as an ascii file. Parameters 
             relevant to this saving are below
@@ -540,7 +599,7 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     centroid = np.argmax(spectrum[0, 1000:]) + 1000
     # Fit in an asymetrical domain about the centroid to avoid 
     # low energy tails.
-    fit_channels = np.arange(centroid - 80, centroid + 150)
+    fit_channels = np.arange(centroid - fit_low, centroid + fit_high)
     # Do the actual fitting.
     g_init = models.Gaussian1D(amplitude=spectrum[0, centroid], 
         mean=centroid, stddev=75)
@@ -574,11 +633,11 @@ def plot_spectrum(spectrum, line, title='Spectrum', save=True,
     plt.tight_layout()
     if save:
         plt.savefig(save_path)
-    plt.close()
 
 
-def pixel_map(values, value_label, title='', save=True, filepath='', 
-    path_constructor=construct_path, etc='', ext='.eps', save_dir=''):
+def pixel_map(values, value_label, vmin=None, vmax=None, title='', 
+    save=True, filepath='', path_constructor=construct_path, etc='', 
+    ext='.eps', save_dir=''):
     '''
     Construct a heatmap of counts across the detector using matplotlib.
 
@@ -626,7 +685,10 @@ def pixel_map(values, value_label, title='', save=True, filepath='',
     masked = np.ma.masked_values(values, 0.0)
     current_cmap = mpl.cm.get_cmap()
     current_cmap.set_bad(color='gray')
-    plt.imshow(masked)
+    plt.imshow(masked, vmin=vmin, vmax=vmax)
+    ticks=np.arange(0, 36, 8)
+    plt.xticks(ticks)
+    plt.yticks(ticks)
     c = plt.colorbar()
     c.set_label(value_label)
     plt.title(title)
@@ -677,7 +739,7 @@ if __name__ == '__main__':
             it to the 'quick_gain' and 'plot_spectrum' functions where 
             indicated.
         ''')
-        
+
     pixel_dir = input('Enter a directory to save pixel spectra to: ')
 
     # Processing data
