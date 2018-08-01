@@ -38,7 +38,7 @@ gain = gflood.quick_gain(plot_dir='pixels/H100', data_dir='energy')
 # The array is stored in 'gflood.spectrum' and a file in 'energy'.
 # Since we don't supply gain data as a parameter, it takes the data from the
 # attribute 'gflood.gain'.
-get_spectrum(save_dir='energy')
+gflood.get_spectrum(save_dir='energy')
 
 
 #
@@ -52,7 +52,7 @@ gflood.plot_spectrum(save_dir='energy', fit_low=77)
 
 # Plots a histogram that bins pixels by their event counts. We've configured
 # it here to not save a file, but to show the result
-count_hist(save=False)
+gflood.count_hist(save=False)
 plt.show()
 
 # Plots heatmaps of counts and gain for each pixel. The functions will save
