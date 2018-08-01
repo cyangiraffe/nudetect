@@ -110,7 +110,8 @@ class Line:
 
     Attributes:
         source: str
-            The name of the radioactive source producing the line. 
+            The name of the radioactive source producing the line. This is
+            case-sensitive, and should be formatted as in the example below.
             E.g., 'Am241'
         energy: float
             The energy of the line in keV.
@@ -157,7 +158,8 @@ class GammaFlood:
     Arguments:
         filepath: str
             Path to gamma flood data. Should be a FITS file. Used to access
-            data and to construct new file names.
+            data and to construct new file names. Also a handy identifier
+            for this object in a pickle (pun intended).
         detector: str
             The detector ID.
         source: str
@@ -199,6 +201,10 @@ class GammaFlood:
         self.temp = temp
         self.etc = etc
 
+    #
+    # Small helper methods: 'line' and 'title'.
+    #
+
     def line(self):
         '''Returns the 'Line' instance to which 'self.source' corresponds.'''
         try:
@@ -225,6 +231,10 @@ class GammaFlood:
 
         return title
 
+    #
+    # Heavy-lifting data analysis methods: 'count_map', 'quick_gain',
+    # and 'get_spectrum'.
+    #
 
     def count_map(self, save=True, path_constructor=construct_path,
         etc='', ext='.txt', save_dir=''):
@@ -276,6 +286,7 @@ class GammaFlood:
         mask = data['TEMP'] > -20
         START = np.argmax(mask)
         END = len(mask) - np.argmax(mask[::-1])
+        del mask
 
         # Masking out non-positive pulse heights
         PHmask = 0 < np.array(data['PH'][START:END])
@@ -372,9 +383,9 @@ class GammaFlood:
             data = file[1].data
 
         mask = data['TEMP'] > -20
-
         START = np.argmax(mask)
         END = len(mask) - np.argmax(mask[::-1])
+        del mask
 
         maxchannel = 10000
         bins = np.arange(1, maxchannel)
@@ -451,6 +462,9 @@ class GammaFlood:
                             plt.savefig(f'{plot_path}_x{x}_y{y}{plot_ext}')
                             plt.close()
 
+        # Freeing some memory
+        del RAWXmask, channel
+
         # Interpolate gain for pixels where fit was unsuccessful. Do it twice 
         # in case the first pass had insufficient data to interpolate 
         # some pixels.
@@ -462,13 +476,14 @@ class GammaFlood:
             empty = np.transpose(np.nonzero(gain == 0.0))
             # Iterating through pixels with failed fitting.
             for x in empty:
-                # 'temp' is the 3x3 array of gain values around the pixel for 
-                # which the fitting failed.
-                temp = newgain[x[0]:x[0]+3, x[1]:x[1]+3]
-                # If there are any nonzero values in 'temp', set the pixel's 
-                # gain to their mean.
-                if np.count_nonzero(temp):
-                    gain[x[0], x[1]] = np.sum(temp) / np.count_nonzero(temp)
+                # 'empty_grid' is the 3x3 array of gain values around the  
+                # pixel for which the fitting failed.
+                empty_grid = newgain[x[0]:x[0]+3, x[1]:x[1]+3]
+                # If there are any nonzero values in 'empty_grid', set the  
+                # pixel's gain to their mean.
+                if np.count_nonzero(empty_grid):
+                    gain[x[0], x[1]] =\
+                        np.sum(empty_grid) / np.count_nonzero(empty_grid)
 
         # Save gain data to an ascii file.
         if save_data:
@@ -556,6 +571,7 @@ class GammaFlood:
         temp_mask = data['TEMP'] > -20
         START = np.argmax(temp_mask)
         END = len(temp_mask) - np.argmax(temp_mask[::-1])
+        del temp_mask
 
         # PH_COM is a list of length 9 corresponding to the charge in pixels 
         # surrounding the event.
@@ -587,6 +603,7 @@ class GammaFlood:
 
         # Binning by energy
         counts, edges = np.histogram(energies, bins=bins, range=energy_range)
+        del energies
 
         # Getting the midpoint of the edges of each bin.
         midpoints = (edges[:-1] + edges[1:]) / 2
@@ -603,6 +620,10 @@ class GammaFlood:
 
         return spectrum
 
+    #
+    # Plotting methods with light data analysis: 'plot_spectrum', 
+    # 'count_hist', and 'pixel_map'.
+    #
 
     def plot_spectrum(self, spectrum=None, line=None, fit_low=80, fit_high=150,
         title=None, save=True, path_constructor=construct_path, 
@@ -772,9 +793,9 @@ class GammaFlood:
             plt.savefig(save_path)
 
 
-    def pixel_map(self, values, value_label, vmin=None, vmax=None, title=None,
-        save=True, path_constructor=construct_path, etc='', 
-        ext='.eps', save_dir=''):
+    def pixel_map(self, values, value_label, cb_label='', vmin=None, vmax=None,
+        title=None, save=True, path_constructor=construct_path,  
+        etc='', ext='.eps', save_dir=''):
         '''
         Construct a heatmap of counts across the detector using matplotlib.
 
@@ -790,9 +811,19 @@ class GammaFlood:
                 if saving the plot.
 
         Keyword Arguments:
+            cb_label: str
+                This string becomes the color bar label. If the empty string,
+                the color bar label is chosen based on 'value_label'.
+                (default: '')
+            vmin: float
+                Passed directly to plt.imshow.
+                (default: None)
+            vmax: float
+                Passed directly to plt.imshow.
+                (default: None)
             title: str
                 Figure title. If None, defaults to a title constructed by the 
-                'Experiment' class's 'title' method.
+                'title' method.
                 (default: None)
             save: bool
                 If True, saves the plot to a file.
@@ -820,14 +851,23 @@ class GammaFlood:
             plot_type = f'{value_label} Map'
             title = self.title(plot_type)
 
+        # Set the color bar label, if not supplied
+        if not cb_label:
+            if 'gain' in value_label.lower():
+                cb_label = 'eV/channel'
+            elif 'count' in value_label.lower():
+                cb_label = 'Counts'
+
+        # Formatting the figure
         fig = plt.figure()
         masked = np.ma.masked_values(values, 0.0)
         current_cmap = mpl.cm.get_cmap('inferno')
         current_cmap.set_bad(color='gray')
+        # The 'extent' kwarg is necessary to make axes flush to the image.
         plt.imshow(masked, vmin=vmin, vmax=vmax, extent=(0, 32, 0 , 32),
             cmap='inferno')
         c = plt.colorbar()
-        c.set_label('eV/channel')
+        c.set_label('eV/channel', labelpad=10)
 
         ticks = np.arange(0, 36, 8)
         plt.xticks(ticks)
@@ -863,7 +903,6 @@ if __name__ == '__main__':
 
     print('Calculating the energy spectrum...')
     gflood.get_spectrum(save_dir=save_dir)
-
 
     # Plotting
     print('Plotting...')
