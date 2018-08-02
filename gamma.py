@@ -18,87 +18,6 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 
-def construct_path(filepath,  description='', etc='', ext='', save_dir=''):
-    '''
-    Constructs a path for saving data and figures based on user input. The 
-    main use of this function is for other functions in this package to use 
-    it as the default path constructor if the user doesn't supply their own 
-    function.
-
-    Note to developers: This function is designed to throw a lot of 
-    exceptions and be strict about formatting early on to avoid 
-    complications later. Call it early in scripts to avoid losing the 
-    results of a long computation to a mistyped directory.
-
-    Arguments:
-        filepath: str
-            This string will form the basis for the file name in the path 
-            returned by this function. If a path is supplied here, the 
-            file name sans extension will be trimmed out and used.
-
-    Keyword Arguments:
-        ext: str
-            The file name extension.
-        description: str
-            A short description of what the file contains. This will be 
-            prepended to the file name.
-            (default: '')
-        etc: str 
-            Other important information, e.g., pixel coordinates. This will 
-            be appended to the file name.
-            (default: '')
-        save_dir: str
-            The directory to which the file will be saved. If left
-            unspecified, the file will be saved to the current directory.
-            (default: '')
-
-    Return:
-        save_path: str
-            A Unix/Linux/MacOS style path that can be used to save data
-            and plots in an organized way.
-    '''
-    ### Handling exceptions and potential errors
-
-    # If 'ext' does not start with a '.', fix it.
-    if ext and ext[0] != '.':
-        ext = f'.{ext}'
-
-    # Check that the save directory exists
-    if save_dir:
-        if not os.path.exists(save_dir):
-            raise ValueError(f'The directory \'{save_dir}\' does not exist.')
-
-    ### Constructing the path name
-
-    # Construct the file name from the file name in 'filepath'.
-    filename = os.path.basename(filepath)
-    save_path = os.path.splitext(filename)[0]
-
-    # Map all whitespace characters and '.' to underscores
-    trans = str.maketrans(
-        '.' + string.whitespace, 
-        '_' * (len(string.whitespace) + 1)
-    )
-    save_path = save_path.translate(trans)
-    
-    # Prepend the description if specified
-    if description:
-        save_path = f'{description}_{save_path}'
-
-    # Append extra info to the file name if specified
-    if etc:
-        save_path += f'_{etc}'
-
-
-    # Append the file extension
-    save_path += ext
-
-    # Prepend the save directory if specified
-    if save_dir:
-        save_path = f'{save_dir}/{save_path}'
-
-    return save_path
-
 
 class Line:
     '''
@@ -150,7 +69,229 @@ am = Line('Am241', 59.54, chan_low=3000, chan_high=6000)
 co = Line('Co57', 122.06, chan_low=5000, chan_high=8000)
 
 
-class GammaFlood:
+class Experiment:
+    '''
+    A base class for classes representing various detector tests, like 
+    GammaFlood and Noise. This houses some methods that all such classes share.
+    '''
+    def construct_path(self, description='', ext='', save_dir=''):
+        '''
+        Constructs a path for saving data and figures based on user input. 
+        If the string passed to 'save_dir' has an empty pair of curly braces 
+        '{}', they will be replaced by the detector ID 'self.detector'.
+
+        Note to developers: This function is designed to throw a lot of 
+        exceptions and be strict about formatting early on to avoid 
+        complications later. Call it early in scripts to avoid losing the 
+        results of a long computation to a mistyped directory.
+
+        Keyword Arguments:
+            ext: str
+                The file name extension.
+            description: str
+                A short description of what the file contains. This will be 
+                prepended to the file name.
+                (default: '')
+            etc: str 
+                Other important information, e.g., pixel coordinates. This  
+                will be appended to the file name.
+                (default: '')
+            save_dir: str
+                The directory to which the file will be saved. If left
+                unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+
+        Return:
+            save_path: str
+                A Unix/Linux/MacOS style path that can be used to save data
+                and plots in an organized way.
+        '''
+        ### Handling exceptions and potential errors
+
+        # If 'ext' does not start with a '.', fix it.
+        if ext and ext[0] != '.':
+            ext = f'.{ext}'
+
+        # Check that the save directory exists
+        if save_dir:
+            save_dir = save_dir.format(self.detector)
+            if not os.path.exists(save_dir):
+                raise ValueError(f'The directory {save_dir} does not exist.')
+
+        ### Constructing the path name
+
+        # Construct the file name from the file name in 'self.filepath'.
+        filename = os.path.basename(self.filepath)
+        save_path = os.path.splitext(filename)[0]
+
+        # Map all whitespace characters and '.' to underscores
+        trans = str.maketrans(
+            '.' + string.whitespace, 
+            '_' * (len(string.whitespace) + 1)
+        )
+        save_path = save_path.translate(trans)
+        
+        # Prepend the description if specified
+        if description:
+            save_path = f'{description}_{save_path}'
+
+        # Append extra info to the file name if specified
+        if self.etc:
+            save_path += f'_{self.etc}'
+
+
+        # Append the file extension
+        save_path += ext
+
+        # Prepend the save directory if specified
+        if save_dir:
+            save_path = f'{save_dir}/{save_path}'
+
+        return save_path
+
+
+    def pixel_map(self, values, value_label, cb_label='', vmin=None, vmax=None,
+        title=None, save=True, ext='.eps', save_dir=''):
+        '''
+        Construct a heatmap of counts across the detector using matplotlib.
+
+        Arguments:
+            values: 2D array
+                A 32 x 32 array of numbers.
+            value_label: str
+                A short label denoting what data is supplied in 'values'.
+                In the hover tooltip, the pixel's value will be labelled with 
+                this string. E.g., if value_label = 'Counts', the tooltip might
+                read 'Counts: 12744'. The color bar title is also set to this 
+                value. Also, value_label.lower() is prepended to the file name
+                if saving the plot.
+
+        Keyword Arguments:
+            cb_label: str
+                This string becomes the color bar label. If the empty string,
+                the color bar label is chosen based on 'value_label'.
+                (default: '')
+            vmin: float
+                Passed directly to plt.imshow.
+                (default: None)
+            vmax: float
+                Passed directly to plt.imshow.
+                (default: None)
+            title: str
+                Figure title. If None, defaults to a title constructed by the 
+                'title' method.
+                (default: None)
+            save: bool
+                If True, saves the plot to a file.
+            path_constructor: function
+                A function that takes the same parameters as the function
+                'gamma.construct_path' that returns a string representing a 
+                path to which the file will be saved.
+                (default: gamma.construct_path)
+            etc: str 
+                Other important information. Will be appended to the file name.
+                (default: '')
+            save_dir: str
+                The directory to which the count_map file will be saved. If 
+                unspecified, the file will be saved to the current directory.
+                (default: '')
+        '''
+        # Generate a save path, if needed.
+        if save:
+            description = (value_label.lower() + '_map').replace(' ', '_')
+            save_path = path_constructor(ext=ext, description=description, 
+                save_dir=save_dir)
+
+        # Constructing the plot title, if none supplied
+        if not title:
+            plot_type = f'{value_label} Map'
+            title = self.title(plot_type)
+
+        # Set the color bar label, if not supplied
+        if not cb_label:
+            if 'gain' in value_label.lower():
+                cb_label = 'eV/channel'
+            elif 'count' in value_label.lower():
+                cb_label = 'Counts'
+
+        # Formatting the figure
+        fig = plt.figure()
+        masked = np.ma.masked_values(values, 0.0)
+        current_cmap = mpl.cm.get_cmap('inferno')
+        current_cmap.set_bad(color='gray')
+        # The 'extent' kwarg is necessary to make axes flush to the image.
+        plt.imshow(masked, vmin=vmin, vmax=vmax, extent=(0, 32, 0 , 32),
+            cmap='inferno')
+        c = plt.colorbar()
+        c.set_label('eV/channel', labelpad=10)
+
+        ticks = np.arange(0, 36, 8)
+        plt.xticks(ticks)
+        plt.yticks(ticks)
+
+        plt.title(title)
+
+        if save:
+            plt.savefig(save_path)
+
+
+class Noise(Experiment):
+    '''
+    A class containing important experiment parameters with methods to supply
+    data analysis functions for gamma flood data.
+    '''
+    def __init__(filepath, detector, temp, pos, gain=None, etc=''):
+        # Check that filepath exists
+        if not os.path.exists(filepath):
+            raise ValueError(f'The path {filepath} does not exist.')
+
+        # Remove any unit symbols from voltage and temperature
+        numericize = str.maketrans('', '', string.ascii_letters)
+        temp = temp.translate(numericize)
+
+        # If gain is supplied, make sure it's a 32x32 array
+        if type(gain) != type(None) and gain.shape != (32, 32):
+            raise ValueError("'gain' should be a 32 x 32 array. Instead an "
+                + f"array of shape {gain.shape} was passed.")
+
+        self.filepath = filepath
+        self.detector = detector
+        self.temp = temp
+        self.pos = pos
+        self.gain = gain
+        self.etc = etc
+
+    def fwhm_map(save=True, save_dir='', ext='.txt'):
+        
+        # Generating the save path, if needed.
+        if save:
+            save_path = self.construct_path(ext=ext, save_dir=save_dir, 
+                description='fwhm_data')
+
+        # Get data from gamma flood FITS file
+        with fits.open(self.filepath) as file:
+            data = file[1].data
+
+
+        # 'START' and 'END' denote the indices between which 'data['TEMP']'
+        # takes on a resonable value and the detector position is the desired 
+        # position. START is the first index with a temperature greater than 
+        # -20 C, and END is the last such index.
+        mask = np.multiply((data['DET_ID'] == pos), (data['TEMP'] > -20))
+        START = np.argmax(mask)
+        END = len(mask) - np.argmax(mask[::-1])
+        del mask
+
+
+class Leakage(Experiment):
+    pass
+
+class GammaFlood(Experiment):
     '''
     A class containing important experiment parameters with methods to supply
     data analysis functions for gamma flood data.
@@ -158,8 +299,7 @@ class GammaFlood:
     Arguments:
         filepath: str
             Path to gamma flood data. Should be a FITS file. Used to access
-            data and to construct new file names. Also a handy identifier
-            for this object in a pickle (pun intended).
+            data and to construct new file names.
         detector: str
             The detector ID.
         source: str
@@ -236,8 +376,7 @@ class GammaFlood:
     # and 'get_spectrum'.
     #
 
-    def count_map(self, save=True, path_constructor=construct_path,
-        etc='', ext='.txt', save_dir=''):
+    def count_map(self, save=True, ext='.txt', save_dir=''):
         '''
         Generates event count data for each pixel for raw gamma flood data.
 
@@ -245,17 +384,14 @@ class GammaFlood:
             save: bool 
                 If True, saves count_map as an ascii file.
                 (default: True)
-            path_constructor: function
-                A function that takes the same parameters as the function
-                'gamma.construct_path' that returns a string representing a 
-                path to which the file will be saved.
-                (default: gamma.construct_path)
-            etc: str 
-                Other important information. Will be appended to the file name.
-                (default: '')
             save_dir: str
-                The directory to which the count_map file will be saved. If 
+                The directory to which the file will be saved. If left
                 unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -268,8 +404,8 @@ class GammaFlood:
         '''
         # Generating the save path, if needed.
         if save:
-            save_path = path_constructor(self.filepath, ext=ext,
-                save_dir=save_dir, etc=etc, description='count_data')
+            save_path = self.construct_path(ext=ext, save_dir=save_dir, 
+                description='count_data')
 
         # Get data from gamma flood FITS file
         with fits.open(self.filepath) as file:
@@ -316,7 +452,6 @@ class GammaFlood:
 
 
     def quick_gain(self, line=None, fit_low=100, fit_high=200, 
-        path_constructor=construct_path, etc='',
         save_plot=True, plot_dir='', plot_ext='.eps', 
         save_data=True, data_dir='', data_ext='.txt'):
         '''
@@ -342,6 +477,11 @@ class GammaFlood:
             plot_dir: str
                 The directory to which the plot file will be saved. If left
                 unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
                 (default: '')
             plot_ext: str
                 The file name extension for the plot file.
@@ -352,13 +492,15 @@ class GammaFlood:
             data_dir: str
                 The directory to which the gain file will be saved. If left
                 unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
                 (default: '')
             data_ext: str
                 The file name extension for the gain file. 
                 (default: '.txt')
-            etc: str 
-                Other important information
-                (default: '')
 
         Return:
             gain: 2D numpy.ndarray
@@ -367,12 +509,12 @@ class GammaFlood:
         '''
 
         if save_data:
-            data_path = path_constructor(self.filepath, ext=data_ext,
-                description='gain_data', etc=etc, save_dir=data_dir)
+            data_path = self.construct_path(ext=data_ext, 
+                description='gain_data', save_dir=data_dir)
 
         if save_plot:
-            plot_path = path_constructor(self.filepath, description='gain',
-                etc=etc, ext=plot_ext, save_dir=plot_dir)
+            plot_path = self.construct_path(description='gain', ext=plot_ext, 
+                save_dir=plot_dir)
 
         # If no line is passed, take it from the GammaFlood instance.
         if line == None:
@@ -496,8 +638,7 @@ class GammaFlood:
 
 
     def get_spectrum(self, gain=None, line=None, bins=10000, 
-        energy_range=(0.01, 120), path_constructor=construct_path, save=True, 
-        ext='.txt', save_dir='', etc=''):
+        energy_range=(0.01, 120), save=True, ext='.txt', save_dir=''):
         '''
         Applies gain correction to get energy data, and then bins the events
         by energy to obtain a spectrum.
@@ -516,20 +657,17 @@ class GammaFlood:
                 Number of energy bins
             energy_range: tuple of numbers
                 The bins will be made between these energies
-            path_constructor: function
-                A function that takes the same parameters as the function
-                'gamma.construct_path' that returns a string representing a 
-                path to which the file will be saved.
-                (default: gamma.construct_path)
             save:
                 If True, 'spectrum' will be saved as an ascii file. Parameters 
                 relevant to this saving are below
-            etc: str 
-                Other important information to go in the filename.
-                (default: '')
             save_dir: str
                 The directory to which the  file will be saved. If left
                 unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -545,8 +683,8 @@ class GammaFlood:
         '''
         # Generating the save path, if needed.
         if save:
-            save_path = path_constructor(self.filepath, ext=ext, 
-                save_dir=save_dir, etc=etc, description='spectrum')
+            save_path = self.construct_path(ext=ext, save_dir=save_dir, 
+                description='spectrum')
 
         # If no gain is passed, take it from the GammaFlood instance.
         if type(gain) == type(None):
@@ -626,8 +764,7 @@ class GammaFlood:
     #
 
     def plot_spectrum(self, spectrum=None, line=None, fit_low=80, fit_high=150,
-        title=None, save=True, path_constructor=construct_path, 
-        etc='', ext='.eps', save_dir=''):
+        title=None, save=True, ext='.eps', save_dir=''):
         '''
         Fits and plots the spectrum returned from 'get_spectrum'. To show the 
         plot with an interactive interface, call 'plt.show()' right after 
@@ -660,17 +797,14 @@ class GammaFlood:
             save:
                 If True, 'spectrum' will be saved as an ascii file. Parameters 
                 relevant to this saving are below
-            path_constructor: function
-                A function that takes the same parameters as the function
-                'gamma.construct_path' that returns a string representing a 
-                path to which the file will be saved.
-                (default: gamma.construct_path)
-            etc: str 
-                Other important information to go in the filename. 
-                (default: '')
             save_dir: str
                 The directory to which the  file will be saved. If left
                 unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -679,8 +813,8 @@ class GammaFlood:
         '''
         # Constructing a save path, if needed
         if save:
-            save_path = path_constructor(self.filepath, ext=ext, 
-                save_dir=save_dir, etc=etc, description='energy_spectrum')
+            save_path = self.construct_path(ext=ext, save_dir=save_dir, 
+                description='energy_spectrum')
 
         # If no spectrum is supplied take it from the instance.
         if type(spectrum) == type(None):
@@ -735,8 +869,7 @@ class GammaFlood:
 
 
     def count_hist(self, count_map=None, bins=100, title=None, 
-        save=True, etc='', ext='.eps', path_constructor=construct_path, 
-        save_dir=''):
+        save=True, ext='.eps', save_dir=''):
         '''
         Plots a count histogram of 'count_map' data.
 
@@ -760,12 +893,14 @@ class GammaFlood:
                 'gamma.construct_path' that returns a string representing a 
                 path to which the file will be saved.
                 (default: gamma.construct_path)
-            etc: str 
-                Other important information to go in the filename. 
-                (default: '')
             save_dir: str
                 The directory to which the  file will be saved. If left
                 unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -774,8 +909,8 @@ class GammaFlood:
 
         # Generate a save path, if needed.
         if save:
-            save_path = path_constructor(self.filepath, ext=ext, etc=etc,
-                description='count_hist', save_dir=save_dir)
+            save_path = self.construct_path(ext=ext, description='count_hist', 
+                save_dir=save_dir)
 
         if  type(count_map) == type(None):
             count_map = self.count_map
@@ -792,91 +927,6 @@ class GammaFlood:
         if save:
             plt.savefig(save_path)
 
-
-    def pixel_map(self, values, value_label, cb_label='', vmin=None, vmax=None,
-        title=None, save=True, path_constructor=construct_path,  
-        etc='', ext='.eps', save_dir=''):
-        '''
-        Construct a heatmap of counts across the detector using matplotlib.
-
-        Arguments:
-            values: 2D array
-                A 32 x 32 array of numbers.
-            value_label: str
-                A short label denoting what data is supplied in 'values'.
-                In the hover tooltip, the pixel's value will be labelled with 
-                this string. E.g., if value_label = 'Counts', the tooltip might
-                read 'Counts: 12744'. The color bar title is also set to this 
-                value. Also, value_label.lower() is prepended to the file name
-                if saving the plot.
-
-        Keyword Arguments:
-            cb_label: str
-                This string becomes the color bar label. If the empty string,
-                the color bar label is chosen based on 'value_label'.
-                (default: '')
-            vmin: float
-                Passed directly to plt.imshow.
-                (default: None)
-            vmax: float
-                Passed directly to plt.imshow.
-                (default: None)
-            title: str
-                Figure title. If None, defaults to a title constructed by the 
-                'title' method.
-                (default: None)
-            save: bool
-                If True, saves the plot to a file.
-            path_constructor: function
-                A function that takes the same parameters as the function
-                'gamma.construct_path' that returns a string representing a 
-                path to which the file will be saved.
-                (default: gamma.construct_path)
-            etc: str 
-                Other important information. Will be appended to the file name.
-                (default: '')
-            save_dir: str
-                The directory to which the count_map file will be saved. If 
-                unspecified, the file will be saved to the current directory.
-                (default: '')
-        '''
-        # Generate a save path, if needed.
-        if save:
-            description = (value_label.lower() + '_map').replace(' ', '_')
-            save_path = path_constructor(self.filepath, ext=ext, 
-                description=description, save_dir=save_dir, etc=etc)
-
-        # Constructing the plot title, if none supplied
-        if not title:
-            plot_type = f'{value_label} Map'
-            title = self.title(plot_type)
-
-        # Set the color bar label, if not supplied
-        if not cb_label:
-            if 'gain' in value_label.lower():
-                cb_label = 'eV/channel'
-            elif 'count' in value_label.lower():
-                cb_label = 'Counts'
-
-        # Formatting the figure
-        fig = plt.figure()
-        masked = np.ma.masked_values(values, 0.0)
-        current_cmap = mpl.cm.get_cmap('inferno')
-        current_cmap.set_bad(color='gray')
-        # The 'extent' kwarg is necessary to make axes flush to the image.
-        plt.imshow(masked, vmin=vmin, vmax=vmax, extent=(0, 32, 0 , 32),
-            cmap='inferno')
-        c = plt.colorbar()
-        c.set_label('eV/channel', labelpad=10)
-
-        ticks = np.arange(0, 36, 8)
-        plt.xticks(ticks)
-        plt.yticks(ticks)
-
-        plt.title(title)
-
-        if save:
-            plt.savefig(save_path)
 
 
 # If this file is run as a script, the code below will run a complete pipeline
