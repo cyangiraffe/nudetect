@@ -1,24 +1,24 @@
-# X-ray Vision
-In its current state, this module provides one working file, 'gamma.py', which can be imported and used for analysis of full-detector gamma flood data. The program is object oriented, and the user primarily interfaces with the 'GammaFlood' class, whose methods provide data analysis and plotting features.
+# NuDetect
+In its current state, this module provides one working file, 'nudetect.py', which can be imported and used for analysis of full-detector gamma flood data. The program is object oriented, and the user primarily interfaces with the 'GammaFlood' class, whose methods provide data analysis and plotting features.
 
 ## Installing
 
-Currently, the package can be crudely installed by putting the 'gamma.py' file into the directory in which you want to run data analysis scripts and then imported like any other module.
+Currently, the package can be crudely installed by putting the 'nudetect.py' file into the directory in which you want to run data analysis scripts and then imported like any other module.
 
 ## Example Script
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-import gamma
+from nudetect import GammaFlood
 
 # Here, we initialize a 'GammaFlood' object. This stores information about the 
 # experiment, and will be populated with analyzed data as we call its methods
 # for processing the raw gamma flood data.
-gflood = gamma.GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
-						  detector='H100', # detector ID
-						  source='Am241', # Used to fit peaks and get gain data
-						  voltage='0V',
-						  temp='-10C')
+gflood = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
+					detector='H100', # detector ID
+					source='Am241', # Used to fit peaks and get gain data
+					voltage='0V',
+					temp='-10C')
 
 #
 # Processing data

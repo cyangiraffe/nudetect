@@ -287,6 +287,16 @@ class Noise(Experiment):
         END = len(mask) - np.argmax(mask[::-1])
         del mask
 
+        maxchannel = 1000
+        bins = np.arange(-maxchannel, maxchannel)
+
+
+        channelMap = [[[] for i in range(33)] for j in range(33)]
+        for i in range(32):
+            RAWXmask = np.array(data['RAWX'][START:END]) == i
+            for j in range(32):
+                RAWYmask = np.array(data['RAWY'][START:END]) == j
+                
 
 class Leakage(Experiment):
     pass
