@@ -74,7 +74,7 @@ class Experiment:
     A base class for classes representing various detector tests, like 
     GammaFlood and Noise. This houses some methods that all such classes share.
     '''
-    def construct_path(self, description='', ext='', save_dir=''):
+    def construct_path(self, description='', ext='', save_dir='', etc=''):
         '''
         Constructs a path for saving data and figures based on user input. 
         If the string passed to 'save_dir' has an empty pair of curly braces 
@@ -143,7 +143,8 @@ class Experiment:
         # Append extra info to the file name if specified
         if self.etc:
             save_path += f'_{self.etc}'
-
+        if etc:
+            save_path += f'_{etc}'
 
         # Append the file extension
         save_path += ext
@@ -153,6 +154,61 @@ class Experiment:
             save_path = f'{save_dir}/{save_path}'
 
         return save_path
+
+
+    def count_hist(self, count_map=None, bins=100, title=None, 
+        save=True, ext='.eps', save_dir=''):
+        '''
+        Plots a count histogram of 'count_map' data.
+
+        Keyword Arguments:
+            count_map: 2D numpy.ndarray
+                A 32 x 32 array of floats. Each entry represents the number of
+                counts read by the detector pixel at the corresponding index.
+                If None, then 'self.count_map' is used instead.
+            bins: int
+                Number of bins for histogram.
+                (default: 100)
+            title: str
+                Figure title. If None, defaults to a title constructed by the 
+                'Experiment' class's 'title' method.
+                (default: None)
+            save:
+                If True, 'spectrum' will be saved as an ascii file. Parameters 
+                relevant to this saving are below
+            save_dir: str
+                The directory to which the  file will be saved. If left
+                unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
+                (default: '')
+            ext: str
+                The file name extension for the count_map file. 
+                (default: '.eps')
+        '''
+
+        # Generate a save path, if needed.
+        if save:
+            save_path = self.construct_path(ext=ext, description='count_hist', 
+                save_dir=save_dir)
+
+        if  count_map is None:
+            count_map = self.count_map
+
+        plt.figure()
+        plt.hist(np.array(count_map).flatten(), bins=bins, 
+            range=(0, np.max(count_map) + 1), 
+            histtype='stepfilled')
+        plt.ylabel('Pixels')
+        plt.xlabel('Counts')
+        plt.title(self.title('Count Histogram'))
+        plt.tight_layout()
+
+        if save:
+            plt.savefig(save_path)
 
 
     def pixel_map(self, values, value_label, cb_label='', vmin=None, vmax=None,
@@ -270,8 +326,17 @@ class Noise(Experiment):
     def noise_map(gain=None, save_plot=True, plot_dir='', plot_ext='.eps',
         save_data=True, data_dir='', data_ext='.txt'):
         '''
-        Does a bunch of noise calculations. More on this later
+        Calculates the noise FWHM for each pixel and generates a noise count
+        map. Also plots  
         '''
+        # 'gain_bool' indicates whether gain data was supplied
+        gain_bool = (self.gain is not None) or (gain is not None)
+
+        if gain_bool:
+            etc = 'gain_x{}_y{}'
+        else:
+            etc = 'nogain_x{}_y{}'
+
         # Generating the save paths, if needed.
         if save_data:
             fwhm_path = self.construct_path(ext=ext, save_dir=data_dir, 
@@ -280,15 +345,13 @@ class Noise(Experiment):
                 description='count_data')
 
         if save_plot:
-            plot_path = self.construct_path(ext=plot_ext, save_dir=plot_dir,
-                description='fwhm_plot')
+            plot_path = self.construct_path(save_dir=plot_dir, etc=etc
+                description='pix_spectrum')
 
         # Get data from noise FITS file
         with fits.open(self.filepath) as file:
             data = file[1].data
 
-        # 'gain_bool' indicates whether gain data was supplied
-        gain_bool = (self.gain is not None) or (gain is not None)
         if not gain_bool:
             gain = np.ones((32, 32))
         # If gain data is not passed directly as a parameter, but is an 
@@ -334,42 +397,50 @@ class Noise(Experiment):
         self.count_map = np.array(
             [[len(channelMap[j][i]) for i in range(32)] for j in range(32)])
 
-        fwhm = []
+        # Generate a fwhm map of noise
         fwhm_map = np.full((32, 32), np.nan)
         for row in range(32):
             for col in range(32):
+                # 
                 if channelMap[row][col]:
                     # Binning events by channel
                     spectrum, edges = np.histogram(channelMap[row][col], 
                         bins=bins, range=(-maxchannel, maxchannel))
+
+                    # Fitting the noise peak at/near zero channels
                     fit_channels = edges[:-1]
                     g_init = models.Gaussian1D(amplitude=np.max(spectrum), 
                         mean=0, stddev=75)
                     fit_g = fitting.LevMarLSQFitter()
                     g = fit_g(g_init, fit_channels, spectrum)
 
-                    fwhm.append(g.fwhm * gain[row][col])
-                    if g.fwhm < 1000:
-                        fwhm_map[row][col] = g.fwhm * gain[row][col]
+                    # Recording the gain-corrected FWHM data for this pixel
+                    # in fwhm_map.
+                    fwhm_map[row][col] = g.fwhm * gain[row][col]
+                    if save_plot:
+                        plt.hist(np.multiply(
+                                channelMap[row][col], gain[row][col]),
+                            bins=np.multiply(bins, gain[row][col]), 
+                            range=(-maxchannel * gain[row][col], 
+                                    maxchannel * gain[row][col]), 
+                            histtype='stepfilled')
+                        
+                        plt.plot(np.multiply(fit_channels, gain[row][col]), 
+                            g(fit_channels))
 
-                    plt.hist(np.multiply(channelMap[row][col], gain[row][col]), bins = np.multiply(bins, gain[row][col]), range = (0-maxchannel*gain[row][col],maxchannel*gain[row][col]), histtype='stepfilled')
-                    plt.plot(np.multiply(fit_channels, gain[row][col]), g(fit_channels))
-                    plt.ylabel('Counts')
-                    if gain_bool:
-                        plt.xlabel('Energy (keV)')
+                        plt.ylabel('Counts')
+                        if gain_bool:
+                            plt.xlabel('Energy (keV)')
+                        else:
+                            plt.xlabel('Channel')
+
                         plt.tight_layout()
-                        #plt.savefig('/disk/lif2/spike/detectorData/' + detector + '/figures/pixel_figs/' + filename[:-4] + 'x' + str(col) + 'y' + str(row) + '_spec_gain.eps')
-                        plt.savefig(save_dir)
-                    else:
-                        plt.xlabel('Channel')
-                        plt.tight_layout()
-                        #plt.savefig('/disk/lif2/spike/detectorData/' + detector + '/figures/pixel_figs/' + filename[:-4] + 'x' + str(col) + 'y' + str(row) + '_spec_corr.eps')
-                        plt.savefig(plot_path)
+                        plt.savefig(plot_path.format(x, y))
+                        plt.close()
         
-        self.fwhm = fwhm
         self.fwhm_map = fwhm_map
 
-        return fwhm, fwhm_map, count_map
+        return fwhm_map, count_map
 
 class Leakage(Experiment):
     pass
@@ -951,64 +1022,7 @@ class GammaFlood(Experiment):
             plt.savefig(save_path)
 
 
-    def count_hist(self, count_map=None, bins=100, title=None, 
-        save=True, ext='.eps', save_dir=''):
-        '''
-        Plots a count histogram of 'count_map' data.
 
-        Keyword Arguments:
-            count_map: 2D numpy.ndarray
-                A 32 x 32 array of floats. Each entry represents the number of
-                counts read by the detector pixel at the corresponding index.
-                If None, then 'self.count_map' is used instead.
-            bins: int
-                Number of bins for histogram.
-                (default: 100)
-            title: str
-                Figure title. If None, defaults to a title constructed by the 
-                'Experiment' class's 'title' method.
-                (default: None)
-            save:
-                If True, 'spectrum' will be saved as an ascii file. Parameters 
-                relevant to this saving are below
-            path_constructor: function
-                A function that takes the same parameters as the function
-                'gamma.construct_path' that returns a string representing a 
-                path to which the file will be saved.
-                (default: gamma.construct_path)
-            save_dir: str
-                The directory to which the  file will be saved. If left
-                unspecified, the file will be saved to the current directory.
-                If the string passed to 'save_dir' has an empty pair of curly 
-                braces '{}', they will be replaced by the detector ID 
-                'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
-                (default: '')
-            ext: str
-                The file name extension for the count_map file. 
-                (default: '.eps')
-        '''
-
-        # Generate a save path, if needed.
-        if save:
-            save_path = self.construct_path(ext=ext, description='count_hist', 
-                save_dir=save_dir)
-
-        if  count_map is None:
-            count_map = self.count_map
-
-        plt.figure()
-        plt.hist(np.array(count_map).flatten(), bins=bins, 
-            range=(0, np.max(count_map) + 1), 
-            histtype='stepfilled')
-        plt.ylabel('Pixels')
-        plt.xlabel('Counts')
-        plt.title(self.title('Count Histogram'))
-        plt.tight_layout()
-
-        if save:
-            plt.savefig(save_path)
 
 
 

@@ -1,5 +1,6 @@
 # NuDetect
-In its current state, this module provides one working file, 'nudetect.py', which can be imported and used for analysis of full-detector gamma flood data. The program is object oriented, and the user primarily interfaces with the 'GammaFlood' class, whose methods provide data analysis and plotting features.
+
+NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data, WIP) and ```Leakage``` (for leakage current data, WIP). 
 
 ## Installing
 
@@ -62,6 +63,12 @@ plt.show()
 gflood.pixel_map(gflood.count_map, 'Counts')
 gflood.pixel_map(gain, 'Gain')
 ```
+
+## Developer Notes
+* All classes with data analysis/plotting methods inherit from the ```Experiment``` base class, which is not useful to instantiate on its own, but contains methods to be shared with its children.
+* There is one additional class called ```Line``` that can store information about a spectral line and the source that emits it.
+* The ```construct_path``` method of the ```Experiment``` class is designed to throw a lot of exceptions and be strict about formatting early on to avoid complications later. Call it early in scripts to avoid losing the results of a long computation to a mistyped directory.
+
 
 ## Built With
 
