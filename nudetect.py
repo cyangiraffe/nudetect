@@ -228,7 +228,7 @@ class Experiment:
         plt.imshow(masked, vmin=vmin, vmax=vmax, extent=(0, 32, 0 , 32),
             cmap='inferno')
         c = plt.colorbar()
-        c.set_label('eV/channel', labelpad=10)
+        c.set_label(cb_label, labelpad=10)
 
         ticks = np.arange(0, 36, 8)
         plt.xticks(ticks)
@@ -266,17 +266,35 @@ class Noise(Experiment):
         self.gain = gain
         self.etc = etc
 
-    def fwhm_map(save=True, save_dir='', ext='.txt'):
-        
-        # Generating the save path, if needed.
-        if save:
-            save_path = self.construct_path(ext=ext, save_dir=save_dir, 
+    # TODO -- test this method and write docstrings
+    def noise_map(gain=None, save_plot=True, plot_dir='', plot_ext='.eps',
+        save_data=True, data_dir='', data_ext='.txt'):
+        '''
+        Does a bunch of noise calculations. More on this later
+        '''
+        # Generating the save paths, if needed.
+        if save_data:
+            fwhm_path = self.construct_path(ext=ext, save_dir=data_dir, 
                 description='fwhm_data')
+            count_path = self.construct_path(ext=ext, save_dir=data_dir,
+                description='count_data')
 
-        # Get data from gamma flood FITS file
+        if save_plot:
+            plot_path = self.construct_path(ext=plot_ext, save_dir=plot_dir,
+                description='fwhm_plot')
+
+        # Get data from noise FITS file
         with fits.open(self.filepath) as file:
             data = file[1].data
 
+        # 'gain_bool' indicates whether gain data was supplied
+        gain_bool = (self.gain is not None) or (gain is not None)
+        if not gain_bool:
+            gain = np.ones((32, 32))
+        # If gain data is not passed directly as a parameter, but is an 
+        # attribute of self, use the attribute's gain data.
+        elif gain is None:
+            gain = self.gain
 
         # 'START' and 'END' denote the indices between which 'data['TEMP']'
         # takes on a resonable value and the detector position is the desired 
@@ -290,13 +308,68 @@ class Noise(Experiment):
         maxchannel = 1000
         bins = np.arange(-maxchannel, maxchannel)
 
+        # Generate 'chan_map', a nested list representing a 33 x 33 array of 
+        # list, each of which contains all the trigger readings for its 
+        # corresponding pixel.
+        chan_map = [[[] for x in range(33)] for y in range(33)]
+        # Iterating through pixels
+        for x in range(32):
+            RAWXmask = np.array(data['RAWX'][START:END]) == 
+            for y in range(32):
+                RAWYmask = np.array(data['RAWY'][START:END]) == y
+                # Storing all readings for the current pixel in 'pulses'.
+                inds = np.nonzero(np.multiply(RAWXmask, RAWYmask))
+                pulses = data.field('PH_RAW')[inds]
+                for idx, pulse in enumerate(pulses):
+                    # If this pulse was triggered by the experiment (by a 
+                    # 'micro pulse'), then add the pulse data for the 3 x 3
+                    # pixel grid centered on the triggered pixel to the 
+                    # corresponding indices of 'chan_map'.
+                    if data['UP'][idx]:
+                        for i in range(9):
+                            chan_map[y + (i // 3)][x + (i % 3)].append(pulse)
+        del data
 
-        channelMap = [[[] for i in range(33)] for j in range(33)]
-        for i in range(32):
-            RAWXmask = np.array(data['RAWX'][START:END]) == i
-            for j in range(32):
-                RAWYmask = np.array(data['RAWY'][START:END]) == j
-                
+        # Generate a count map of micropulse-triggered events from 'chan_map'
+        self.count_map = np.array(
+            [[len(channelMap[j][i]) for i in range(32)] for j in range(32)])
+
+        fwhm = []
+        fwhm_map = np.full((32, 32), np.nan)
+        for row in range(32):
+            for col in range(32):
+                if channelMap[row][col]:
+                    # Binning events by channel
+                    spectrum, edges = np.histogram(channelMap[row][col], 
+                        bins=bins, range=(-maxchannel, maxchannel))
+                    fit_channels = edges[:-1]
+                    g_init = models.Gaussian1D(amplitude=np.max(spectrum), 
+                        mean=0, stddev=75)
+                    fit_g = fitting.LevMarLSQFitter()
+                    g = fit_g(g_init, fit_channels, spectrum)
+
+                    fwhm.append(g.fwhm * gain[row][col])
+                    if g.fwhm < 1000:
+                        fwhm_map[row][col] = g.fwhm * gain[row][col]
+
+                    plt.hist(np.multiply(channelMap[row][col], gain[row][col]), bins = np.multiply(bins, gain[row][col]), range = (0-maxchannel*gain[row][col],maxchannel*gain[row][col]), histtype='stepfilled')
+                    plt.plot(np.multiply(fit_channels, gain[row][col]), g(fit_channels))
+                    plt.ylabel('Counts')
+                    if gain_bool:
+                        plt.xlabel('Energy (keV)')
+                        plt.tight_layout()
+                        #plt.savefig('/disk/lif2/spike/detectorData/' + detector + '/figures/pixel_figs/' + filename[:-4] + 'x' + str(col) + 'y' + str(row) + '_spec_gain.eps')
+                        plt.savefig(save_dir)
+                    else:
+                        plt.xlabel('Channel')
+                        plt.tight_layout()
+                        #plt.savefig('/disk/lif2/spike/detectorData/' + detector + '/figures/pixel_figs/' + filename[:-4] + 'x' + str(col) + 'y' + str(row) + '_spec_corr.eps')
+                        plt.savefig(plot_path)
+        
+        self.fwhm = fwhm
+        self.fwhm_map = fwhm_map
+
+        return fwhm, fwhm_map, count_map
 
 class Leakage(Experiment):
     pass
@@ -547,12 +620,11 @@ class GammaFlood(Experiment):
         for x in range(32):
             RAWXmask = data.field('RAWX')[START:END] == x
             for y in range(32):
+                RAWYmask = data.field('RAWY')[START:END] == y
                 # Getting peak height in 'channels' for all events for the 
                 # current pixel.
                 channel = data.field('PH')[START:END][np.nonzero(
-                    np.multiply(
-                        RAWXmask, data.field('RAWY')[START:END] == y
-                    ))]
+                    np.multiply(RAWXmask, RAWYmask))]
 
                 # If there were events at this pixel, fit the strongest peak
                 # in the channel spectrum with a Gaussian.
@@ -614,8 +686,7 @@ class GammaFlood(Experiment):
                             plt.savefig(f'{plot_path}_x{x}_y{y}{plot_ext}')
                             plt.close()
 
-        # Freeing some memory
-        del RAWXmask, channel
+        del RAWXmask, channel, data
 
         # Interpolate gain for pixels where fit was unsuccessful. Do it twice 
         # in case the first pass had insufficient data to interpolate 
@@ -697,10 +768,10 @@ class GammaFlood(Experiment):
                 description='spectrum')
 
         # If no gain is passed, take it from the GammaFlood instance.
-        if type(gain) == type(None):
+        if gain is None:
             gain = self.gain
         # If no line is passed, take it from the GammaFlood instance.
-        if not line:
+        if line is None:
             line = self.line()
 
         # Adding a buffer of zeros around the 'gain' array. (Note that the
@@ -749,6 +820,8 @@ class GammaFlood(Experiment):
                     energies.append(np.sum(np.multiply(
                         np.multiply(mask, pulse_grid), gain_grid)))
 
+        del data
+
         # Binning by energy
         counts, edges = np.histogram(energies, bins=bins, range=energy_range)
         del energies
@@ -769,8 +842,8 @@ class GammaFlood(Experiment):
         return spectrum
 
     #
-    # Plotting methods with light data analysis: 'plot_spectrum', 
-    # 'count_hist', and 'pixel_map'.
+    # Plotting methods with light data analysis: 'plot_spectrum' and
+    # 'count_hist'. Also 'pixel_map' inherited from 'Experiment'.
     #
 
     def plot_spectrum(self, spectrum=None, line=None, fit_low=80, fit_high=150,
@@ -827,13 +900,13 @@ class GammaFlood(Experiment):
                 description='energy_spectrum')
 
         # If no spectrum is supplied take it from the instance.
-        if type(spectrum) == type(None):
+        if spectrum is None:
             spectrum = self.spectrum
         # If no line is passed, take it from the GammaFlood instance.
-        if line == None:
+        if line is None:
             line = self.line()
         # If no title is passed, construct one
-        if not title:
+        if title is None:
             title = self.title('Spectrum')
 
         maxchannel = 10000
@@ -922,7 +995,7 @@ class GammaFlood(Experiment):
             save_path = self.construct_path(ext=ext, description='count_hist', 
                 save_dir=save_dir)
 
-        if  type(count_map) == type(None):
+        if  count_map is None:
             count_map = self.count_map
 
         plt.figure()
@@ -969,7 +1042,7 @@ if __name__ == '__main__':
 
     gflood.plot_spectrum(save_dir=save_dir)
     gflood.count_hist(save_dir=save_dir)
-    gflood.pixel_map(gflood.count_map, 'Counts', save_dir=save_dir)
-    gflood.pixel_map(gflood.gain, 'Gain', save_dir=save_dir)
+    gflood.pixel_map(count_map, 'Counts', save_dir=save_dir)
+    gflood.pixel_map(gain, 'Gain', save_dir=save_dir)
 
     print('Done!')
