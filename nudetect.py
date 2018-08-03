@@ -7,6 +7,7 @@ supplied gamma flood data.
 # Packages for making life easier
 import os.path
 import string
+import argparse
 
 # Data analysis packages
 import numpy as np
@@ -62,11 +63,6 @@ class Line:
 
         # Add this instance to 'lines' upon instantiation
         Line.lines[source] = self
-
-# Defining 'Line' instances for Am241 and Co57. 
-am = Line('Am241', 59.54, chan_low=3000, chan_high=6000)
-# Co57's 'chan_low' and 'chan_high' attributes have not been tested.
-co = Line('Co57', 122.06, chan_low=5000, chan_high=8000)
 
 
 class Experiment:
@@ -300,8 +296,29 @@ class Noise(Experiment):
     '''
     A class containing important experiment parameters with methods to supply
     data analysis functions for gamma flood data.
+
+    Arguments:
+        filepath: str
+            A path to the noise data.
+        detector: str
+            The detector ID.
+        voltage: str:
+            The bias voltage in Volts.
+        temp: str
+            The temperature in degrees Celsius.
+        pos: int
+            The detector position.
+
+    Keyword arguments:
+        gain: 32 x 32 numpy.ndarray
+            Pixel-by-pixel gain data for the detector. This can be supplied
+            after initialization though the 'gain' attribute. Do not supply
+            a dummy value here if no gain is available. The methods of this
+            class take care of that.
+        etc: str
+            Other important information to append to created files's names.
     '''
-    def __init__(filepath, detector, temp, pos, gain=None, etc=''):
+    def __init__(filepath, detector, voltage, temp, pos, gain=None, etc=''):
         # Check that filepath exists
         if not os.path.exists(filepath):
             raise ValueError(f'The path {filepath} does not exist.')
@@ -321,6 +338,7 @@ class Noise(Experiment):
         self.pos = pos
         self.gain = gain
         self.etc = etc
+
 
     # TODO -- test this method and write docstrings
     def noise_map(gain=None, save_plot=True, plot_dir='', plot_ext='.eps',
@@ -345,7 +363,7 @@ class Noise(Experiment):
                 description='count_data')
 
         if save_plot:
-            plot_path = self.construct_path(save_dir=plot_dir, etc=etc
+            plot_path = self.construct_path(save_dir=plot_dir, etc=etc,
                 description='pix_spectrum')
 
         # Get data from noise FITS file
@@ -377,7 +395,7 @@ class Noise(Experiment):
         chan_map = [[[] for x in range(33)] for y in range(33)]
         # Iterating through pixels
         for x in range(32):
-            RAWXmask = np.array(data['RAWX'][START:END]) == 
+            RAWXmask = np.array(data['RAWX'][START:END]) == x
             for y in range(32):
                 RAWYmask = np.array(data['RAWY'][START:END]) == y
                 # Storing all readings for the current pixel in 'pulses'.
@@ -424,7 +442,7 @@ class Noise(Experiment):
                             range=(-maxchannel * gain[row][col], 
                                     maxchannel * gain[row][col]), 
                             histtype='stepfilled')
-                        
+
                         plt.plot(np.multiply(fit_channels, gain[row][col]), 
                             g(fit_channels))
 
@@ -494,6 +512,13 @@ class GammaFlood(Experiment):
         self.voltage = voltage
         self.temp = temp
         self.etc = etc
+
+
+    # Defining 'Line' instances for Am241 and Co57. Co57's 'chan_low' and 
+    # 'chan_high' attributes have not been tested.
+    am = Line('Am241', 59.54, chan_low=3000, chan_high=6000)
+    co = Line('Co57', 122.06, chan_low=5000, chan_high=8000)
+
 
     #
     # Small helper methods: 'line' and 'title'.
@@ -1022,41 +1047,86 @@ class GammaFlood(Experiment):
             plt.savefig(save_path)
 
 
-
-
-
-
 # If this file is run as a script, the code below will run a complete pipeline
 # for gamma flood data analysis with default parameter values.
+
 if __name__ == '__main__':
 
-    filepath = input('Enter the filepath to the gamma flood data: ')
-    source = input('Enter the name of the source used (Am241 or Co57): ')
-    detector = input('Enter the detector ID: ')
-    voltage = input('Enter the voltage in Volts (no unit symbol): ')
-    temp = input('Enter the temperature in Celsius (no unit symbol): ')
-    save_dir = input('Enter a directory to save outputs to: ')
+    parser = argparse.ArgumentParser(description='Analyze detector data.')
+    parser.add_argument('experiment', metavar='A', type=str,
+        help="""Determines which experiment is being analyzed. Can take on
+        the values 'gamma', 'noise', or 'leakage'.""")
 
-    gflood = GammaFlood(filepath, detector, source, voltage, temp)
+    experiment = parser.parse_args().experiment.lower()
 
-    pixel_dir = input('Enter a directory to save pixel spectra to: ')
+    # Run complete gamma flood data analysis.
+    if experiment == 'gamma' or experiment == 'gammaflood':
 
-    # Processing data
-    print('Calculating count data...')
-    count_map = gflood.count_map(save_dir=save_dir)
+        filepath = input('Enter the path to the gamma flood data: ')
+        while not os.path.exists(filepath):
+            filepath = input("That path doesn't exist. " + 
+                "Enter another path to the gamma flood data: ")
 
-    print('Calculating gain data...')
-    gain = gflood.quick_gain(plot_dir=pixel_dir, data_dir=save_dir)
+        source = input('Enter the name of the source used (Am241 or Co57): ')
+        detector = input('Enter the detector ID: ')
+        voltage = input('Enter the voltage in Volts (no unit symbol): ')
+        temp = input('Enter the temperature in Celsius (no unit symbol): ')
+        save_dir = input('Enter a directory to save outputs to: ')
 
-    print('Calculating the energy spectrum...')
-    gflood.get_spectrum(save_dir=save_dir)
+        gflood = GammaFlood(filepath, detector, source, voltage, temp)
 
-    # Plotting
-    print('Plotting...')
+        pixel_dir = input('Enter a directory to save pixel spectra to: ')
 
-    gflood.plot_spectrum(save_dir=save_dir)
-    gflood.count_hist(save_dir=save_dir)
-    gflood.pixel_map(count_map, 'Counts', save_dir=save_dir)
-    gflood.pixel_map(gain, 'Gain', save_dir=save_dir)
+        # Processing data
+        print('Calculating count data...')
+        count_map = gflood.count_map(save_dir=save_dir)
 
-    print('Done!')
+        print('Calculating gain data...')
+        gain = gflood.quick_gain(plot_dir=pixel_dir, data_dir=save_dir)
+
+        print('Calculating the energy spectrum...')
+        gflood.get_spectrum(save_dir=save_dir)
+
+        # Plotting
+        print('Plotting...')
+
+        gflood.plot_spectrum(save_dir=save_dir)
+        gflood.count_hist(save_dir=save_dir)
+        gflood.pixel_map(count_map, 'Counts', save_dir=save_dir)
+        gflood.pixel_map(gain, 'Gain', save_dir=save_dir)
+
+        print('Done!')
+
+    # Run complete noise data analysis.
+    elif experiment == 'noise':
+
+        # Requesting paths to noise and gain data
+        filepath = input('Enter the path to the noise data: ')
+        while not os.path.exists(filepath):
+            filepath = input("That path doesn't exist. " + 
+                "Enter another path to the noise data: ")
+
+        gainpath = input('Enter the path to the gain data, or leave blank' + 
+            'if there is no gain data: ')
+        while not os.path.exists(gainpath) and not gainpath:
+            filepath = input("That path doesn't exist. " + 
+                "Enter another path to the noise data: ")
+        
+        gain = None
+        if gainpath:
+            gain = np.loadtxt(gainpath)
+
+        # Requesting experiment information and where to save outputs
+        detector = input('Enter the detector ID: ')
+        pos = input('Enter the detector positon: ')
+        voltage = input('Enter the voltage in Volts (no unit symbol): ')
+        temp = input('Enter the temperature in Celsius (no unit symbol): ')
+        save_dir = input('Enter a directory to save outputs to: ')
+
+        noise = Noise(filepath, detector, voltage, temp, pos, gain=gain)
+
+        pixel_dir = input('Enter a directory to save pixel spectra to: ')
+
+        # Processing data
+        print('Calculating fwhm and count data...')
+        noise.noise_map()
