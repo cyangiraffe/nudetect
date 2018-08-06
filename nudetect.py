@@ -153,7 +153,7 @@ class Experiment:
 
 
     def count_hist(self, count_map=None, bins=100, title=None, 
-        save=True, ext='.eps', save_dir=''):
+        save=True, ext='.pdf', save_dir=''):
         '''
         Plots a count histogram of 'count_map' data.
 
@@ -183,7 +183,7 @@ class Experiment:
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
-                (default: '.eps')
+                (default: '.pdf')
         '''
 
         # Generate a save path, if needed.
@@ -208,7 +208,7 @@ class Experiment:
 
 
     def pixel_map(self, values, value_label, cb_label='', vmin=None, vmax=None,
-        title=None, save=True, ext='.eps', save_dir=''):
+        title=None, save=True, ext='.pdf', save_dir=''):
         '''
         Construct a heatmap of counts across the detector using matplotlib.
 
@@ -341,29 +341,73 @@ class Noise(Experiment):
 
 
     # TODO -- test this method and write docstrings
-    def noise_map(gain=None, save_plot=True, plot_dir='', plot_ext='.eps',
+    def noise_map(gain=None, save_plot=True, plot_dir='', plot_ext='.pdf',
         save_data=True, data_dir='', data_ext='.txt'):
         '''
         Calculates the noise FWHM for each pixel and generates a noise count
-        map. Also plots  
+        map. Also plots a noise spectrum for each pixel.
+
+        Keyword Arguments:
+            gain: 2D numpy.ndarray
+                A 32 x 32 array of floats. Each entry represents its  
+                respective pixel's gain, where channels * gain = energy. If 
+                None, defaults to the array in 'self.gain'.
+                (default: None)
+            save_plot: bool
+                If true, plots and energy spectrum for each pixel and saves
+                the figure.
+                (default: True)
+            plot_dir: str
+                The directory to which the plot file will be saved. If left
+                unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
+                (default: '')
+            plot_ext: str
+                The file name extension for the plot file.
+                (default: '.pdf')  
+            save_data: bool 
+                If True, saves gain data as a .txt file.
+                (default: True)
+            data_dir: str
+                The directory to which the gain file will be saved. If left
+                unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the file is saved to
+                the directory 'figures/H100/pixels'.
+                (default: '')
+            data_ext: str
+                The file name extension for the gain file. 
+                (default: '.txt')
         '''
         # 'gain_bool' indicates whether gain data was supplied
         gain_bool = (self.gain is not None) or (gain is not None)
 
+        # 'etc' and 'etc_plot' will be appended to file names, denoting  
+        # whether data/plots were gain-corrected.
         if gain_bool:
-            etc = 'gain_x{}_y{}'
+            etc = 'gain'
         else:
-            etc = 'nogain_x{}_y{}'
+            etc = 'nogain'
+
+        # 'etc_plot' will be formatted to have pixel coordinates, since a
+        # spectrum is plotted for each pixel.
+        etc_plot = etc + '_x{}_y{}'
 
         # Generating the save paths, if needed.
         if save_data:
             fwhm_path = self.construct_path(ext=ext, save_dir=data_dir, 
-                description='fwhm_data')
+                description='fwhm_data', etc=etc)
             count_path = self.construct_path(ext=ext, save_dir=data_dir,
-                description='count_data')
+                description='count_data', etc=etc)
 
         if save_plot:
-            plot_path = self.construct_path(save_dir=plot_dir, etc=etc,
+            plot_path = self.construct_path(save_dir=plot_dir, etc=etc_plot,
                 description='pix_spectrum')
 
         # Get data from noise FITS file
@@ -417,9 +461,10 @@ class Noise(Experiment):
 
         # Generate a fwhm map of noise
         fwhm_map = np.full((32, 32), np.nan)
+        # Iterate through pixels
         for row in range(32):
             for col in range(32):
-                # 
+                # If there were events at this pixel, bin them by channel
                 if channelMap[row][col]:
                     # Binning events by channel
                     spectrum, edges = np.histogram(channelMap[row][col], 
@@ -459,6 +504,7 @@ class Noise(Experiment):
         self.fwhm_map = fwhm_map
 
         return fwhm_map, count_map
+
 
 class Leakage(Experiment):
     pass
@@ -631,7 +677,7 @@ class GammaFlood(Experiment):
 
 
     def quick_gain(self, line=None, fit_low=100, fit_high=200, 
-        save_plot=True, plot_dir='', plot_ext='.eps', 
+        save_plot=True, plot_dir='', plot_ext='.pdf', 
         save_data=True, data_dir='', data_ext='.txt'):
         '''
         Generates gain correction data from the raw gamma flood event data.
@@ -664,7 +710,7 @@ class GammaFlood(Experiment):
                 (default: '')
             plot_ext: str
                 The file name extension for the plot file.
-                (default: '.eps')  
+                (default: '.pdf')  
             save_data: bool 
                 If True, saves gain data as a .txt file.
                 (default: True)
@@ -943,7 +989,7 @@ class GammaFlood(Experiment):
     #
 
     def plot_spectrum(self, spectrum=None, line=None, fit_low=80, fit_high=150,
-        title=None, save=True, ext='.eps', save_dir=''):
+        title=None, save=True, ext='.pdf', save_dir=''):
         '''
         Fits and plots the spectrum returned from 'get_spectrum'. To show the 
         plot with an interactive interface, call 'plt.show()' right after 
@@ -987,7 +1033,7 @@ class GammaFlood(Experiment):
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
-                (default: '.eps')
+                (default: '.pdf')
 
         '''
         # Constructing a save path, if needed
