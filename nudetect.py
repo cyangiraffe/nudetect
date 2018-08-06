@@ -318,7 +318,8 @@ class Noise(Experiment):
         etc: str
             Other important information to append to created files's names.
     '''
-    def __init__(filepath, detector, voltage, temp, pos, gain=None, etc=''):
+    def __init__(self, filepath, detector, voltage, temp, pos, gain=None, 
+        etc=''):
         # Check that filepath exists
         if not os.path.exists(filepath):
             raise ValueError(f'The path {filepath} does not exist.')
@@ -327,22 +328,92 @@ class Noise(Experiment):
         numericize = str.maketrans('', '', string.ascii_letters)
         temp = temp.translate(numericize)
 
-        # If gain is supplied, make sure it's a 32x32 array
-        if type(gain) != type(None) and gain.shape != (32, 32):
+        # If gain is supplied, make sure it's a 32 x 32 array
+        if gain is not None and gain.shape != (32, 32):
             raise ValueError("'gain' should be a 32 x 32 array. Instead an "
                 + f"array of shape {gain.shape} was passed.")
 
         self.filepath = filepath
         self.detector = detector
         self.temp = temp
-        self.pos = pos
-        self.gain = gain
+        self.pos = int(pos)
+        self._gain = gain
+        self._gain_corrected = gain is not None
         self.etc = etc
 
 
-    # TODO -- test this method and write docstrings
-    def noise_map(gain=None, save_plot=True, plot_dir='', plot_ext='.pdf',
-        save_data=True, data_dir='', data_ext='.txt'):
+    def load_fwhm_map(self, fwhm_map, gain_corrected=None):
+        '''
+        Sets the '_fwhm_map' and '_gain_corrected' attributes of this 
+        instance based on a path to the fwhm map data file.
+
+        Arguments:
+            fwhm_map: str
+                A path to an ascii file containing FWHM map data.
+
+        Keyword Arguments:
+            gain_corrected: bool
+                If True, indicated that the supplied FWHM data was gain 
+                corrected and is in units of keV. If False, then the data
+                should still be in units of channels. If None, then the 
+                value will be determined by the path (specifically
+                whether the phrase 'nogain' is in the file name).
+        '''
+        # If 'gain_corrected' specified, set its value based on the 
+        # path 'fwhm_map'.
+        if gain_corrected is None:
+            gain_corrected = 'nogain' not in fwhm_map
+            if 'gain' not in fwhm_map:
+                raise Exception('Could not determine from the file name '
+                    + 'whether the FWHM map was corrected for gain. Please'
+                    + "enter an appropriate value for 'gain_corrected'.")
+
+        if type(gain_corrected) != bool:
+            raise TypeError("'gain_corrected must be type 'bool'. Type "
+                + f"{type(gain_corrected)} was given.")
+
+        self._gain_corrected = gain_corrected
+
+        fwhm_map = np.loadtxt(fwhm_map)
+
+        if fwhm_map.shape != (32, 32):
+            raise ValueError("'fwhm_map' should reference a 32 x 32 array."
+                + f"Instead an array of shape {fwhm_map.shape} was given.")
+
+        self._fwhm_map = fwhm_map
+
+
+    def set_fwhm_map(self, fwhm_map, gain_corrected):
+        '''
+        Sets the '_fwhm_map' and '_gain_corrected' attributes of this 
+        instance using a numpy.ndarray object containing the data and 
+        user input for whether it is gain corrected.
+
+        Arguments:
+            fwhm_map: str
+                A path to an ascii file containing FWHM map data.
+            gain_corrected: bool
+                If True, indicated that the supplied FWHM data was gain 
+                corrected and is in units of keV. If False, then the data
+                should still be in units of channels.
+        '''
+        if type(gain_corrected) != bool:
+            raise TypeError("'gain_corrected must be type 'bool'. Type "
+                + f"{type(gain_corrected)} was given.")
+
+        self._gain_corrected = gain_corrected
+
+        fwhm_map = np.loadtxt(fwhm_map)
+
+        if fwhm_map.shape != (32, 32):
+            raise ValueError("'fwhm_map' should be a 32 x 32 array."
+                + f"Instead an array of shape {fwhm_map.shape} was given.")
+
+        self._fwhm_map = fwhm_map
+
+
+    def noise_map(self, gain=None, save_plot=True, plot_dir='',
+        plot_ext='.pdf', save_data=True, data_dir='', data_ext='.txt'):
         '''
         Calculates the noise FWHM for each pixel and generates a noise count
         map. Also plots a noise spectrum for each pixel.
@@ -505,6 +576,42 @@ class Noise(Experiment):
 
         return fwhm_map, count_map
 
+
+    def fwhm_hist(save=True, save_dir='', ext='.pdf'):
+        '''
+        Plots a histogram of the fwhms for the noise of each pixel.
+        '''
+
+        fwhm = np.flatten(self._fwhm_map)
+
+        if self._gain_corrected:
+            hist_range = (0, 4)
+            mean_fwhm = str(int(round(np.mean(fwhm) * 1000, 0)))
+            stdv_fwhm = str(int(round(np.std(fwhm) * 1000, 0)))
+            fwhm_units = 'eV'
+            axis_units = 'keV'
+        else:
+            hist_range = (0, 150)
+            mean_fwhm = str(round(np.mean(fwhm), 0))
+            stdv_fwhm = str(round(np.std(fwhm), 0))
+            fwhm_units = 'channels'
+            axis_units = 'channels'
+
+        plt.figure()
+
+        plt.hist(fwhm, bins=50, range=hist_range, histtype='stepfilled')
+
+        bot, top = plt.ylim()
+        left, right = plt.xlim()
+
+        plt.text(right * 0.5, top * 0.8, 
+            f'Mean = {mean_fwhm} {fwhm_units}', fontsize = 16)
+        plt.text(right*0.5, top*0.6, 
+            f'1-Sigma = {stdv_fwhm} {fwhm_units}', fontsize = 16)
+
+        plt.xlabel(f'FWHM ({axis_units})')
+        plt.ylabel('Pixels')
+        
 
 class Leakage(Experiment):
     pass
