@@ -240,16 +240,8 @@ class Experiment:
                 (default: None)
             save: bool
                 If True, saves the plot to a file.
-            path_constructor: function
-                A function that takes the same parameters as the function
-                'gamma.construct_path' that returns a string representing a 
-                path to which the file will be saved.
-                (default: gamma.construct_path)
-            etc: str 
-                Other important information. Will be appended to the file name.
-                (default: '')
             save_dir: str
-                The directory to which the count_map file will be saved. If 
+                The directory to which the plot file will be saved. If 
                 unspecified, the file will be saved to the current directory.
                 (default: '')
         '''
