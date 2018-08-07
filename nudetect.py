@@ -295,7 +295,7 @@ class Experiment:
 class Noise(Experiment):
     '''
     A class containing important experiment parameters with methods to supply
-    data analysis functions for gamma flood data.
+    data analysis functions for noise data.
 
     Arguments:
         filepath: str
@@ -341,6 +341,9 @@ class Noise(Experiment):
         self._gain_corrected = gain is not None
         self.etc = etc
 
+    #
+    # Small helper methods: 'load_fwhm_map' and 'set_fwhm_map'
+    #
 
     def load_fwhm_map(self, fwhm_map, gain_corrected=None):
         '''
@@ -411,6 +414,10 @@ class Noise(Experiment):
 
         self._fwhm_map = fwhm_map
 
+
+    #
+    # Heavy lifting data analysis method: 'noise_map'
+    #
 
     def noise_map(self, gain=None, save_plot=True, plot_dir='',
         plot_ext='.pdf', save_data=True, data_dir='', data_ext='.txt'):
@@ -577,6 +584,10 @@ class Noise(Experiment):
         return fwhm_map, count_map
 
 
+    #
+    # Plotting method: 'fwhm_hist'
+    #
+
     def fwhm_hist(save=True, save_dir='', ext='.pdf'):
         '''
         Plots a histogram of the fwhms for the noise of each pixel.
@@ -611,7 +622,7 @@ class Noise(Experiment):
 
         plt.xlabel(f'FWHM ({axis_units})')
         plt.ylabel('Pixels')
-        
+
 
 class Leakage(Experiment):
     pass
