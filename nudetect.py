@@ -293,6 +293,9 @@ class Noise(Experiment):
     A class containing important experiment parameters with methods to supply
     data analysis functions for noise data.
 
+    Attributes:
+
+
     Arguments:
         filepath: str
             A path to the noise data.
@@ -333,12 +336,14 @@ class Noise(Experiment):
         # False when 'noise_map' is called, denoting whether the attribute
         # 'fwhm_map' is corrected for gain.
         self._gain_corrected = None
+        self._gain = gain
+        self._fwhm_map = None
+        self.count_map = None
 
         self.filepath = filepath
         self.detector = detector
         self.temp = temp
         self.pos = int(pos)
-        self._gain = gain
         self.etc = etc
 
     #
@@ -512,12 +517,12 @@ class Noise(Experiment):
         # Generate 'chan_map', a nested list representing a 33 x 33 array of 
         # list, each of which contains all the trigger readings for its 
         # corresponding pixel.
-        chan_map = [[[] for x in range(33)] for y in range(33)]
+        chan_map = [[[] for col in range(33)] for row in range(33)]
         # Iterating through pixels
-        for x in range(32):
-            RAWXmask = np.array(data['RAWX'][START:END]) == x
-            for y in range(32):
-                RAWYmask = np.array(data['RAWY'][START:END]) == y
+        for col in range(32):
+            RAWXmask = np.array(data['RAWX'][START:END]) == col
+            for row in range(32):
+                RAWYmask = np.array(data['RAWY'][START:END]) == row
                 # Storing all readings for the current pixel in 'pulses'.
                 inds = np.nonzero(np.multiply(RAWXmask, RAWYmask))
                 pulses = data.field('PH_RAW')[inds]
@@ -528,17 +533,19 @@ class Noise(Experiment):
                     # corresponding indices of 'chan_map'.
                     if data['UP'][idx]:
                         for i in range(9):
-                            mapx = x + (i % 3) - 1
-                            mapy = y + (i // 3) - 1
-                            chan_map[mapy][mapx].append(pulse)
-        del data
+                            mapcol = col + (i % 3) - 1
+                            maprow = row + (i // 3) - 1
+                            chan_map[maprow][mapcol].append(pulse)
 
-        # Generate a count map of micropulse-triggered events from 'chan_map'
+        del data, mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
+
+        # Generate a count map of micropulse-triggered events from 'chan_map'.
         count_map = np.array(
             [[len(chan_map[j][i]) for i in range(32)] for j in range(32)])
         self.count_map = count_map
        
-        # Generate a fwhm map of noise
+        # Generate a fwhm map of noise, and plot the gaussian fit to each 
+        # pixel's spectrum.
         fwhm_map = np.full((32, 32), np.nan)
         # Iterate through pixels
         for row in range(32):
@@ -577,13 +584,17 @@ class Noise(Experiment):
                             plt.xlabel('Channel')
 
                         plt.tight_layout()
-                        plt.savefig(plot_path.format(x, y))
+                        plt.savefig(plot_path.format(row, col))
                         plt.close()
         
-        self.fwhm_map = fwhm_map
-        # Set '_gain_corrected' here to make sure the fwhm_map attribute was
-        # successfully set.
+        self._fwhm_map = fwhm_map
+        # Set '_gain_corrected' way down here to make sure the 'fwhm_map'
+        # attribute was successfully set.
         self._gain_corrected = gain_bool
+
+        if save_data:
+            np.savetxt(fwhm_path, fwhm_map)
+            np.savetxt(count_path, count_map)
 
         return fwhm_map, count_map
 
@@ -673,7 +684,12 @@ class GammaFlood(Experiment):
         voltage = voltage.translate(numericize)
         temp = temp.translate(numericize)
 
-        # Set attributes
+        # Initialize data-based attributes to 'None'
+        self.count_map = None
+        self.gain = None
+        self.spectrum = None
+
+        # Set user-supplied attributes
         self.filepath = filepath
         self.detector = detector
         self.source = source
@@ -1299,4 +1315,6 @@ if __name__ == '__main__':
 
         # Processing data
         print('Calculating fwhm and count data...')
-        noise.noise_map()
+        noise.noise_map(data_dir=save_dir, plot_dir=pixel_dir)
+
+        print('Done!')
