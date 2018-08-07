@@ -1259,9 +1259,11 @@ if __name__ == '__main__':
             filepath = input("That path doesn't exist. " + 
                 "Enter another path to the noise data: ")
 
-        gainpath = input('Enter the path to the gain data, or leave blank' + 
+        gainpath = input('Enter the path to the gain data, or leave blank ' + 
             'if there is no gain data: ')
-        while not os.path.exists(gainpath) and not gainpath:
+	# Request a different input if a non-existent path (other than an
+	# empty string) was given for 'gainpath'.
+        while not os.path.exists(gainpath) and gainpath:
             filepath = input("That path doesn't exist. " + 
                 "Enter another path to the noise data: ")
         
