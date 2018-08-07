@@ -2,11 +2,20 @@
 
 NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data, WIP) and ```Leakage``` (for leakage current data, WIP). 
 
-## Installing
+## Getting Started
+
+### Installing
 
 Currently, the package can be crudely installed by putting the 'nudetect.py' file into the directory in which you want to run data analysis scripts and then imported like any other module.
 
-## Example Script
+### Required Packages
+
+* Numpy
+* Astropy
+* Scipy
+* Matplotlib
+
+### Example Script
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
@@ -69,16 +78,9 @@ gflood.pixel_map(gain, 'Gain')
 * There is one additional class called ```Line``` that can store information about a spectral line and the source that emits it.
 * The ```construct_path``` method of the ```Experiment``` class is designed to throw a lot of exceptions and be strict about formatting early on to avoid complications later. Call it early in scripts to avoid losing the results of a long computation to a mistyped directory.
 
-
-## Built With
-
-* Astropy (v. 3.0)
-* Numpy (v. 1.14)
-
 ## Authors
 
 * **Hiromasa Miyasaka** - *Wrote original IDL scripts*
 * **Sean Pike** - *Wrote scripts in Python* - [snpike](https://github.com/snpike/)
 * **Julian Sanders** - *Wrote documentation, helper functions, and classes. Edited existing code for style and efficiency.* - [cyangiraffe](https://github.com/colcaboose)
 * **Andrew Sosanya** - *Documentation and logistics* - [DrewSosa](https://github.com/DrewSosa)
-
