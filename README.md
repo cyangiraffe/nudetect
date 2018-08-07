@@ -79,6 +79,6 @@ gflood.pixel_map(gain, 'Gain')
 
 * **Hiromasa Miyasaka** - *Wrote original IDL scripts*
 * **Sean Pike** - *Wrote scripts in Python* - [snpike](https://github.com/snpike/)
-* **Julian Sanders** - *Documentation, helper functions and classes, and organization* - [colcaboose](https://github.com/colcaboose)
+* **Julian Sanders** - *Wrote documentation, helper functions, and classes. Edited existing code for style and efficiency.* - [cyangiraffe](https://github.com/colcaboose)
 * **Andrew Sosanya** - *Documentation and logistics* - [DrewSosa](https://github.com/DrewSosa)
 
