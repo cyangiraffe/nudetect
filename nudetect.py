@@ -481,9 +481,9 @@ class Noise(Experiment):
 
         # Generating the save paths, if needed.
         if save_data:
-            fwhm_path = self.construct_path(ext=ext, save_dir=data_dir, 
+            fwhm_path = self.construct_path(ext=data_ext, save_dir=data_dir, 
                 description='fwhm_data', etc=etc)
-            count_path = self.construct_path(ext=ext, save_dir=data_dir,
+            count_path = self.construct_path(ext=data_ext, save_dir=data_dir,
                 description='count_data', etc=etc)
 
         if save_plot:
