@@ -18,6 +18,10 @@ from astropy.modeling import models, fitting
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+# Setting the mpl backend to be compatible with the SRL server (or
+# something - I just found this here:
+# https://github.com/matplotlib/matplotlib/issues/3466)
+plt.switch_backend('agg')
 
 
 class Line:
@@ -488,7 +492,7 @@ class Noise(Experiment):
 
         if save_plot:
             plot_path = self.construct_path(save_dir=plot_dir, etc=etc_plot,
-                description='pix_spectrum')
+                description='pix_spectrum', ext=plot_ext)
 
         # Get data from noise FITS file
         with fits.open(self.filepath) as file:
@@ -538,18 +542,19 @@ class Noise(Experiment):
         del data
 
         # Generate a count map of micropulse-triggered events from 'chan_map'
-        self.count_map = np.array(
-            [[len(channelMap[j][i]) for i in range(32)] for j in range(32)])
-
+        count_map = np.array(
+            [[len(chan_map[j][i]) for i in range(32)] for j in range(32)])
+        self.count_map = count_map
+       
         # Generate a fwhm map of noise
         fwhm_map = np.full((32, 32), np.nan)
         # Iterate through pixels
         for row in range(32):
             for col in range(32):
                 # If there were events at this pixel, bin them by channel
-                if channelMap[row][col]:
+                if chan_map[row][col]:
                     # Binning events by channel
-                    spectrum, edges = np.histogram(channelMap[row][col], 
+                    spectrum, edges = np.histogram(chan_map[row][col], 
                         bins=bins, range=(-maxchannel, maxchannel))
 
                     # Fitting the noise peak at/near zero channels
@@ -564,7 +569,7 @@ class Noise(Experiment):
                     fwhm_map[row][col] = g.fwhm * gain[row][col]
                     if save_plot:
                         plt.hist(np.multiply(
-                                channelMap[row][col], gain[row][col]),
+                                chan_map[row][col], gain[row][col]),
                             bins=np.multiply(bins, gain[row][col]), 
                             range=(-maxchannel * gain[row][col], 
                                     maxchannel * gain[row][col]), 
@@ -1279,8 +1284,8 @@ if __name__ == '__main__':
 
         gainpath = input('Enter the path to the gain data, or leave blank ' + 
             'if there is no gain data: ')
-	# Request a different input if a non-existent path (other than an
-	# empty string) was given for 'gainpath'.
+    # Request a different input if a non-existent path (other than an
+    # empty string) was given for 'gainpath'.
         while not os.path.exists(gainpath) and gainpath:
             filepath = input("That path doesn't exist. " + 
                 "Enter another path to the noise data: ")
