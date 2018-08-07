@@ -532,7 +532,9 @@ class Noise(Experiment):
                     # corresponding indices of 'chan_map'.
                     if data['UP'][idx]:
                         for i in range(9):
-                            chan_map[y + (i // 3)][x + (i % 3)].append(pulse)
+                            mapx = x + (i % 3) - 1
+                            mapy = y + (i // 3) - 1
+                            chan_map[mapy][mapx].append(pulse)
         del data
 
         # Generate a count map of micropulse-triggered events from 'chan_map'
