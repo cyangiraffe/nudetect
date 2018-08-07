@@ -333,12 +333,16 @@ class Noise(Experiment):
             raise ValueError("'gain' should be a 32 x 32 array. Instead an "
                 + f"array of shape {gain.shape} was passed.")
 
+        # Initialize '_gain_corrected' to None. This will be set to True or 
+        # False when 'noise_map' is called, denoting whether the attribute
+        # 'fwhm_map' is corrected for gain.
+        self._gain_corrected = None
+
         self.filepath = filepath
         self.detector = detector
         self.temp = temp
         self.pos = int(pos)
         self._gain = gain
-        self._gain_corrected = gain is not None
         self.etc = etc
 
     #
@@ -463,11 +467,9 @@ class Noise(Experiment):
                 The file name extension for the gain file. 
                 (default: '.txt')
         '''
-        # 'gain_bool' indicates whether gain data was supplied
-        gain_bool = (self.gain is not None) or (gain is not None)
-
         # 'etc' and 'etc_plot' will be appended to file names, denoting  
         # whether data/plots were gain-corrected.
+        gain_bool = (self._gain is not None) or (gain is not None)
         if gain_bool:
             etc = 'gain'
         else:
@@ -497,7 +499,7 @@ class Noise(Experiment):
         # If gain data is not passed directly as a parameter, but is an 
         # attribute of self, use the attribute's gain data.
         elif gain is None:
-            gain = self.gain
+            gain = self._gain
 
         # 'START' and 'END' denote the indices between which 'data['TEMP']'
         # takes on a resonable value and the detector position is the desired 
@@ -580,6 +582,9 @@ class Noise(Experiment):
                         plt.close()
         
         self.fwhm_map = fwhm_map
+        # Set '_gain_corrected' here to make sure the fwhm_map attribute was
+        # successfully set.
+        self._gain_corrected = gain_bool
 
         return fwhm_map, count_map
 
