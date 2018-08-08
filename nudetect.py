@@ -18,11 +18,6 @@ from astropy.modeling import models, fitting
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-# Setting the mpl backend to be compatible with the SRL server (or
-# something - I just found this here:
-# https://github.com/matplotlib/matplotlib/issues/3466)
-plt.switch_backend('agg')
-
 
 class Line:
     '''
@@ -252,7 +247,7 @@ class Experiment:
         # Generate a save path, if needed.
         if save:
             description = (value_label.lower() + '_map').replace(' ', '_')
-            save_path = path_constructor(ext=ext, description=description, 
+            save_path = self.construct_path(ext=ext, description=description, 
                 save_dir=save_dir)
 
         # Constructing the plot title, if none supplied
@@ -263,9 +258,11 @@ class Experiment:
         # Set the color bar label, if not supplied
         if not cb_label:
             if 'gain' in value_label.lower():
-                cb_label = 'eV/channel'
+                cb_label = 'Gain (eV/channel)'
             elif 'count' in value_label.lower():
                 cb_label = 'Counts'
+            elif 'fwhm' in value_label.lower():
+                cb_label = 'FWHM (keV)'
 
         # Formatting the figure
         fig = plt.figure()
@@ -294,7 +291,7 @@ class Noise(Experiment):
     data analysis functions for noise data.
 
     Attributes:
-
+        TODO -- add these
 
     Arguments:
         filepath: str
@@ -319,13 +316,10 @@ class Noise(Experiment):
     '''
     def __init__(self, filepath, detector, voltage, temp, pos, gain=None, 
         etc=''):
-        # Check that filepath exists
-        if not os.path.exists(filepath):
-            raise ValueError(f'The path {filepath} does not exist.')
-
         # Remove any unit symbols from voltage and temperature
         numericize = str.maketrans('', '', string.ascii_letters)
         temp = temp.translate(numericize)
+        voltage = voltage.translate(numericize)
 
         # If gain is supplied, make sure it's a 32 x 32 array
         if gain is not None and gain.shape != (32, 32):
@@ -343,12 +337,30 @@ class Noise(Experiment):
         self.filepath = filepath
         self.detector = detector
         self.temp = temp
+        self.voltage = voltage
         self.pos = int(pos)
         self.etc = etc
 
     #
-    # Small helper methods: 'load_fwhm_map' and 'set_fwhm_map'
+    # Small helper methods: 'load_fwhm_map', 'set_fwhm_map', and 'title'.
     #
+
+
+    def title(self, plot):
+        '''
+        Returns a plot title based on the instance's attributes and the 
+        type of plot. 'plot' is a str indicating the type of plot.
+        '''
+        temp = r'$' + self.temp + r'^{\circ}$C'
+        voltage = r'$' + self.voltage + r'$ V'
+
+        title = f'Noise {self.detector} {plot} ({voltage}, {temp})'
+
+        if self.etc:
+            title += f' -- {self.etc}'
+
+        return title
+
 
     def load_fwhm_map(self, fwhm_map, gain_corrected=None):
         '''
@@ -535,7 +547,7 @@ class Noise(Experiment):
                         for i in range(9):
                             mapcol = col + (i % 3) - 1
                             maprow = row + (i // 3) - 1
-                            chan_map[maprow][mapcol].append(pulse)
+                            chan_map[maprow][mapcol].append(pulse[i])
 
         del data, mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
 
@@ -675,10 +687,6 @@ class GammaFlood(Experiment):
                 valid 'source' values, or call 'help(Line)' to see how to 
                 define a new Line object.''')
 
-        # Check that filepath exists
-        if not os.path.exists(filepath):
-            raise ValueError(f'The path {filepath} does not exist.')
-
         # Remove any unit symbols from voltage and temperature
         numericize = str.maketrans('', '', string.ascii_letters)
         voltage = voltage.translate(numericize)
@@ -725,9 +733,10 @@ class GammaFlood(Experiment):
         type of plot. 'plot' is a str indicating the type of plot.
         '''
         temp = r'$' + self.temp + r'^{\circ}$C'
-        voltage = f'{self.voltage} V'
+        voltage = r'$' + self.voltage + r'$ V'
 
-        title = f'{self.detector} {self.source} {plot} ({voltage}, {temp})'
+        title = r'$\gamma$ Flood '\
+        + f'{self.detector} {self.source} {plot} ({voltage}, {temp})'
 
         if self.etc:
             title += f' -- {self.etc}'
@@ -1242,6 +1251,13 @@ if __name__ == '__main__':
         the values 'gamma', 'noise', or 'leakage'.""")
 
     experiment = parser.parse_args().experiment.lower()
+
+    # Setting the mpl backend to be compatible with the SRL server (or
+    # something - I just found this here:
+    # https://github.com/matplotlib/matplotlib/issues/3466)
+    # Didn't want to put this else where because it screws stuff up if you 
+    # want to plot stuff on your own machine.
+    plt.switch_backend('agg')
 
     # Run complete gamma flood data analysis.
     if experiment == 'gamma' or experiment == 'gammaflood':
