@@ -518,7 +518,7 @@ class Noise(Experiment):
         # takes on a resonable value and the detector position is the desired 
         # position. START is the first index with a temperature greater than 
         # -20 C, and END is the last such index.
-        mask = np.multiply((data['DET_ID'] == pos), (data['TEMP'] > -20))
+        mask = np.multiply((data['DET_ID'] == self.pos), (data['TEMP'] > -20))
         START = np.argmax(mask)
         END = len(mask) - np.argmax(mask[::-1])
         del mask
