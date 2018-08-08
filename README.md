@@ -15,6 +15,8 @@ Currently, the package can be crudely installed by putting the 'nudetect.py' fil
 * Scipy
 * Matplotlib
 
+**Note:** for matplotlib to work on the server lif.srl.caltech.edu (as of 8 August 2018), you must switch the matplotlib backend to 'agg'. To do this permanently in a miniconda distribution, copy the matplotlibrc sample file at miniconda3/lib/python3.6/site-packages/matplotlib/mpl-data/matplotlibrc to the .config/matplotlib directory, open the file (.config/matplotlib/matplotlibrc) and set the value of 'backend' to 'agg'.
+
 ### Example Script
 ```python
 import numpy as np
