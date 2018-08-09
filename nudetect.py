@@ -121,8 +121,8 @@ class Experiment:
 
         ### Constructing the path name
 
-        # Construct the file name from the file name in 'self.filepath'.
-        filename = os.path.basename(self.filepath)
+        # Construct the file name from the file name in 'self.datapath'.
+        filename = os.path.basename(self.datapath)
         save_path = os.path.splitext(filename)[0]
 
         # Map all whitespace characters and '.' to underscores
@@ -292,7 +292,7 @@ class Noise(Experiment):
     data analysis functions for noise data.
 
     Public attributes:
-        filepath: str
+        datapath: str
             A path to the noise data.
         detector: str
             The detector ID.
@@ -325,13 +325,13 @@ class Noise(Experiment):
             attribute should not have been initialized yet.
             (initialized to None)
     '''
-    def __init__(self, filepath, detector, voltage, temp, pos, gain=None, 
+    def __init__(self, datapath, detector, voltage, temp, pos, gain=None, 
         etc=''):
         '''
         Initialized an instance of the 'Noise' class.
 
         Arguments:
-            filepath: str
+            datapath: str
                 A path to the noise data.
             detector: str
                 The detector ID.
@@ -371,7 +371,7 @@ class Noise(Experiment):
         self._fwhm_map = None
         self.count_map = None
 
-        self.filepath = filepath
+        self.datapath = datapath
         self.detector = detector
         self.temp = temp
         self.voltage = voltage
@@ -558,7 +558,7 @@ class Noise(Experiment):
                 description='pix_spectrum', ext=plot_ext)
 
         # Get data from noise FITS file
-        with fits.open(self.filepath) as file:
+        with fits.open(self.datapath) as file:
             data = file[1].data
 
         if not gain_bool:
@@ -753,7 +753,7 @@ class Leakage(Experiment):
     data analysis functions for noise data.
 
     Public attributes:
-        filepath: str
+        datapath: str
             A path to the noise data.
         detector: str
             The detector ID.
@@ -766,13 +766,13 @@ class Leakage(Experiment):
         etc: str
             Other important information to append to created files's names.
     '''
-    def __init__(self, filepath, detector, temps, cp_voltages, n_voltages,
+    def __init__(self, datapath, detector, temps, cp_voltages, n_voltages,
         pos, etc=''):
         '''
         Initialized an instance of the 'Noise' class.
 
         Arguments:
-            filepath: str
+            datapath: str
                 A path to the noise data.
             detector: str
                 The detector ID.
@@ -796,7 +796,7 @@ class Leakage(Experiment):
         numericize = str.maketrans('', '', string.ascii_letters)
         temp = temp.translate(numericize)
 
-        self.filepath = filepath
+        self.datapath = datapath
         self.detector = detector
         self.temps = temps
         self.cp_voltages = cp_voltages
@@ -842,7 +842,7 @@ class GammaFlood(Experiment):
     data analysis functions for gamma flood data.
 
     Public attributes:
-        filepath: str
+        datapath: str
             Path to gamma flood data. Should be a FITS file. Used to access
             data and to construct new file names.
         detector: str
@@ -874,12 +874,12 @@ class GammaFlood(Experiment):
             to the value stored in self.spectrum.
             (initialized to None)
     '''
-    def __init__(self, filepath, detector, source, voltage, temp, etc=''):
+    def __init__(self, datapath, detector, source, voltage, temp, etc=''):
         '''
         Initializes an instance of the 'GammaFlood' class.
 
         Arguments:
-            filepath: str
+            datapath: str
                 Path to gamma flood data. Should be a FITS file. Used to access
                 data and to construct new file names.
             detector: str
@@ -919,7 +919,7 @@ class GammaFlood(Experiment):
         self.spectrum = None
 
         # Set user-supplied attributes
-        self.filepath = filepath
+        self.datapath = datapath
         self.detector = detector
         self.source = source
         self.voltage = voltage
@@ -1001,7 +1001,7 @@ class GammaFlood(Experiment):
                 description='count_data')
 
         # Get data from gamma flood FITS file
-        with fits.open(self.filepath) as file:
+        with fits.open(self.datapath) as file:
             data = file[1].data
 
         # The masks ('mask', 'PHmask', 'STIMmask', and 'TOTmask') below show 
@@ -1114,7 +1114,7 @@ class GammaFlood(Experiment):
             line = self.line()
 
         # Get data from gamma flood FITS file
-        with fits.open(self.filepath) as file:
+        with fits.open(self.datapath) as file:
             data = file[1].data
 
         mask = data['TEMP'] > -20
@@ -1291,7 +1291,7 @@ class GammaFlood(Experiment):
         gain = gain_buffed
 
         # Get data from gamma flood FITS file
-        with fits.open(self.filepath) as file:
+        with fits.open(self.datapath) as file:
             data = file[1].data
 
         # 'START' and 'END' denote the indices between which 'data['TEMP']'
@@ -1483,9 +1483,9 @@ if __name__ == '__main__':
     # Run complete gamma flood data analysis.
     if experiment == 'gamma' or experiment == 'gammaflood':
 
-        filepath = input('Enter the path to the gamma flood data: ')
-        while not os.path.exists(filepath):
-            filepath = input("That path doesn't exist. " + 
+        datapath = input('Enter the path to the gamma flood data: ')
+        while not os.path.exists(datapath):
+            datapath = input("That path doesn't exist. " + 
                 "Enter another path to the gamma flood data: ")
 
         source = input('Enter the name of the source used (Am241 or Co57): ')
@@ -1494,7 +1494,7 @@ if __name__ == '__main__':
         temp = input('Enter the temperature in Celsius (no unit symbol): ')
         save_dir = input('Enter a directory to save outputs to: ')
 
-        gamma = GammaFlood(filepath, detector, source, voltage, temp)
+        gamma = GammaFlood(datapath, detector, source, voltage, temp)
 
         pixel_dir = input('Enter a directory to save pixel spectra to: ')
 
@@ -1522,9 +1522,9 @@ if __name__ == '__main__':
     elif experiment == 'noise':
 
         # Requesting paths to noise and gain data
-        filepath = input('Enter the path to the noise data: ')
-        while not os.path.exists(filepath):
-            filepath = input("That path doesn't exist. " + 
+        datapath = input('Enter the path to the noise data: ')
+        while not os.path.exists(datapath):
+            datapath = input("That path doesn't exist. " + 
                 "Enter another path to the noise data: ")
 
         gainpath = input('Enter the path to the gain data, or leave blank ' + 
@@ -1532,7 +1532,7 @@ if __name__ == '__main__':
     # Request a different input if a non-existent path (other than an
     # empty string) was given for 'gainpath'.
         while not os.path.exists(gainpath) and gainpath:
-            filepath = input("That path doesn't exist. " + 
+            datapath = input("That path doesn't exist. " + 
                 "Enter another path to the noise data: ")
         
         gain = None
@@ -1546,7 +1546,7 @@ if __name__ == '__main__':
         temp = input('Enter the temperature in Celsius (no unit symbol): ')
         save_dir = input('Enter a directory to save outputs to: ')
 
-        noise = Noise(filepath, detector, voltage, temp, pos, gain=gain)
+        noise = Noise(datapath, detector, voltage, temp, pos, gain=gain)
 
         pixel_dir = input('Enter a directory to save pixel spectra to: ')
 
