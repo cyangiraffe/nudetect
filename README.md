@@ -1,6 +1,6 @@
 # NuDetect
 
-NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data, WIP) and ```Leakage``` (for leakage current data, WIP). 
+NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data) and ```Leakage``` (for leakage current data, WIP). 
 
 ## Getting Started
 
@@ -29,8 +29,8 @@ from nudetect import GammaFlood
 gamma = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
 					detector='H100', # detector ID
 					source='Am241', # Used to fit peaks and get gain data
-					voltage='0V',
-					temp='-10C')
+					voltage=0, # in volts
+					temp=-10) # in degrees celsius
 
 #
 # Processing data
