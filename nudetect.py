@@ -13,6 +13,7 @@ import argparse
 import numpy as np
 from astropy.io import fits
 from astropy.modeling import models, fitting
+import astropy.io.ascii as asciio
 
 # Plotting packages
 import matplotlib.pyplot as plt
@@ -747,7 +748,93 @@ class Noise(Experiment):
 
 
 class Leakage(Experiment):
-    pass
+    '''
+    A class containing important experiment parameters with methods to supply
+    data analysis functions for noise data.
+
+    Public attributes:
+        filepath: str
+            A path to the noise data.
+        detector: str
+            The detector ID.
+        temp: str
+            The temperature in degrees Celsius.
+        pos: int
+            The detector position.
+        voltages: 1D array-like of numbers:
+            The bias voltages in Volts.
+        etc: str
+            Other important information to append to created files's names.
+    '''
+    def __init__(self, filepath, detector, temps, cp_voltages, n_voltages,
+        pos, etc=''):
+        '''
+        Initialized an instance of the 'Noise' class.
+
+        Arguments:
+            filepath: str
+                A path to the noise data.
+            detector: str
+                The detector ID.
+            pos: int
+                The detector position.
+            temps: 1D array-like of numbers
+                The temperatures in degrees Celsius.
+            cp_voltages: 1D array-like of numbers:
+                The bias voltages in volts used for testing in 
+                charge-pump mode.
+            n_voltages: 1D array-like of numbers:
+                The bias voltages in volts used for testing in 
+                normal mode.
+
+        Keyword arguments:
+            etc: str
+                Other important information to append to created files's names.
+        '''
+        # Remove any unit symbols from temperature
+        temp = str(temp)
+        numericize = str.maketrans('', '', string.ascii_letters)
+        temp = temp.translate(numericize)
+
+        self.filepath = filepath
+        self.detector = detector
+        self.temps = temps
+        self.cp_voltages = cp_voltages
+        self.n_voltages = n_voltages
+        self.pos = int(pos)
+        self.etc = etc
+
+    #
+    # Small helper method: 'title'.
+    #
+
+    # TODO: There's a lot to do for this method. Probably pass voltage as
+    # an argument and stuff. Or not? idk.
+    def title(self, plot):
+        '''
+        Returns a plot title based on the instance's attributes and the 
+        type of plot. 'plot' is a str indicating the type of plot.
+        '''
+        temp = r'$' + self.temp + r'^{\circ}$C'
+
+        title = f'Noise {self.detector} {plot} ({temp})'
+
+        if self.etc:
+            title += f' -- {self.etc}'
+
+        return title
+
+
+    #
+    # Heavy-lifting data analysis method: 'leakage'
+    #
+
+    def leakage(self, save=True, save_dir='', ext='.txt'):
+        '''
+        TODO
+        '''
+
+
 
 class GammaFlood(Experiment):
     '''
@@ -1375,7 +1462,7 @@ class GammaFlood(Experiment):
 
 
 # If this file is run as a script, the code below will run a complete pipeline
-# for gamma flood data analysis with default parameter values.
+# for an experiment's data analysis with default parameter values.
 
 if __name__ == '__main__':
 
