@@ -1407,27 +1407,27 @@ if __name__ == '__main__':
         temp = input('Enter the temperature in Celsius (no unit symbol): ')
         save_dir = input('Enter a directory to save outputs to: ')
 
-        gflood = GammaFlood(filepath, detector, source, voltage, temp)
+        gamma = GammaFlood(filepath, detector, source, voltage, temp)
 
         pixel_dir = input('Enter a directory to save pixel spectra to: ')
 
         # Processing data
         print('Calculating count data...')
-        count_map = gflood.count_map(save_dir=save_dir)
+        count_map = gamma.count_map(save_dir=save_dir)
 
         print('Calculating gain data...')
-        gain = gflood.quick_gain(plot_dir=pixel_dir, data_dir=save_dir)
+        gain = gamma.quick_gain(plot_dir=pixel_dir, data_dir=save_dir)
 
         print('Calculating the energy spectrum...')
-        gflood.get_spectrum(save_dir=save_dir)
+        gamma.get_spectrum(save_dir=save_dir)
 
         # Plotting
         print('Plotting...')
 
-        gflood.plot_spectrum(save_dir=save_dir)
-        gflood.count_hist(save_dir=save_dir)
-        gflood.pixel_map(count_map, 'Counts', save_dir=save_dir)
-        gflood.pixel_map(gain, 'Gain', save_dir=save_dir)
+        gamma.plot_spectrum(save_dir=save_dir)
+        gamma.count_hist(save_dir=save_dir)
+        gamma.pixel_map(count_map, 'Counts', save_dir=save_dir)
+        gamma.pixel_map(gain, 'Gain', save_dir=save_dir)
 
         print('Done!')
 
