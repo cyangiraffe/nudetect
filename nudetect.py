@@ -290,10 +290,7 @@ class Noise(Experiment):
     A class containing important experiment parameters with methods to supply
     data analysis functions for noise data.
 
-    Attributes:
-        TODO -- add these
-
-    Arguments:
+    Public attributes:
         filepath: str
             A path to the noise data.
         detector: str
@@ -304,8 +301,6 @@ class Noise(Experiment):
             The temperature in degrees Celsius.
         pos: int
             The detector position.
-
-    Keyword arguments:
         gain: 32 x 32 numpy.ndarray
             Pixel-by-pixel gain data for the detector. This can be supplied
             after initialization though the 'gain' attribute. Do not supply
@@ -313,10 +308,51 @@ class Noise(Experiment):
             class take care of that.
         etc: str
             Other important information to append to created files's names.
+        count_map: 2D numpy.ndarray
+            A 32 x 32 array with the number of events collected during the 
+            noise test at each corresponding pixel.
+            (initialized to None)
+
+    Private attributes:
+        _fwhm_map: 2D numpy.ndarray
+            A 32 x 32 array with the fwhm of the gaussian fit to the noise
+            data collected at the corresponding pixel.
+            (initialized to None)
+        _gain_corrected: bool
+            If True, indicates that the '_fwhm_map' attribute has been gain-
+            corrected. If False, it has not. If None, then the '_fwhm_data'
+            attribute should not have been initialized yet.
+            (initialized to None)
     '''
     def __init__(self, filepath, detector, voltage, temp, pos, gain=None, 
         etc=''):
+        '''
+        Initialized an instance of the 'Noise' class.
+
+        Arguments:
+            filepath: str
+                A path to the noise data.
+            detector: str
+                The detector ID.
+            voltage: str:
+                The bias voltage in Volts.
+            temp: str
+                The temperature in degrees Celsius.
+            pos: int
+                The detector position.
+
+        Keyword arguments:
+            gain: 32 x 32 numpy.ndarray
+                Pixel-by-pixel gain data for the detector. This can be supplied
+                after initialization though the 'gain' attribute. Do not supply
+                a dummy value here if no gain is available. The methods of this
+                class take care of that.
+            etc: str
+                Other important information to append to created files's names.
+        '''
         # Remove any unit symbols from voltage and temperature
+        temp = str(temp)
+        voltage = str(voltage)
         numericize = str.maketrans('', '', string.ascii_letters)
         temp = temp.translate(numericize)
         voltage = voltage.translate(numericize)
@@ -330,7 +366,7 @@ class Noise(Experiment):
         # False when 'noise_map' is called, denoting whether the attribute
         # 'fwhm_map' is corrected for gain.
         self._gain_corrected = None
-        self._gain = gain
+        self.gain = gain
         self._fwhm_map = None
         self.count_map = None
 
@@ -342,7 +378,8 @@ class Noise(Experiment):
         self.etc = etc
 
     #
-    # Small helper methods: 'load_fwhm_map', 'set_fwhm_map', and 'title'.
+    # Small helper methods and such: 'title', 'load_fwhm_map', 'set_fwhm_map', 
+    # 'get_fwhm_map', and 'get_gain_corrected'.
     #
 
 
@@ -410,8 +447,8 @@ class Noise(Experiment):
         user input for whether it is gain corrected.
 
         Arguments:
-            fwhm_map: str
-                A path to an ascii file containing FWHM map data.
+            fwhm_map: numpy.ndarray
+                A 2D numpy array containing FWHM map data.
             gain_corrected: bool
                 If True, indicated that the supplied FWHM data was gain 
                 corrected and is in units of keV. If False, then the data
@@ -423,13 +460,21 @@ class Noise(Experiment):
 
         self._gain_corrected = gain_corrected
 
-        fwhm_map = np.loadtxt(fwhm_map)
-
         if fwhm_map.shape != (32, 32):
             raise ValueError("'fwhm_map' should be a 32 x 32 array."
                 + f"Instead an array of shape {fwhm_map.shape} was given.")
 
         self._fwhm_map = fwhm_map
+
+
+    def get_fwhm_map(self):
+        '''Returns a copy of the private attribute '_fwhm_map'.'''
+        return self._fwhm_map
+
+
+    def get_gain_corrected(self):
+        '''Returns a copy of the private attribute '_gain_corrected'.'''
+        return self._gain_corrected
 
 
     #
@@ -479,10 +524,18 @@ class Noise(Experiment):
             data_ext: str
                 The file name extension for the gain file. 
                 (default: '.txt')
+
+        Return: tuple(numpy.ndarray, numpy.ndarray)
+            fwhm_map: 2D numpy.ndarray
+                A 32 x 32 array with the fwhm of the gaussian fit to the noise
+                data collected at the corresponding pixel.
+            count_map: 2D numpy.ndarray
+                A 32 x 32 array with the number of events collected during the 
+                noise test at each corresponding pixel.
         '''
         # 'etc' and 'etc_plot' will be appended to file names, denoting  
         # whether data/plots were gain-corrected.
-        gain_bool = (self._gain is not None) or (gain is not None)
+        gain_bool = (self.gain is not None) or (gain is not None)
         if gain_bool:
             etc = 'gain'
         else:
@@ -512,7 +565,7 @@ class Noise(Experiment):
         # If gain data is not passed directly as a parameter, but is an 
         # attribute of self, use the attribute's gain data.
         elif gain is None:
-            gain = self._gain
+            gain = self.gain
 
         # 'START' and 'END' denote the indices between which 'data['TEMP']'
         # takes on a resonable value and the detector position is the desired 
@@ -615,40 +668,82 @@ class Noise(Experiment):
     # Plotting method: 'fwhm_hist'
     #
 
-    def fwhm_hist(save=True, save_dir='', ext='.pdf'):
+    def fwhm_hist(self, bins=50, hist_range=None, save=True, save_dir='', 
+        ext='.pdf', text_pos='right'):
         '''
         Plots a histogram of the fwhms for the noise of each pixel.
+
+        Keyword Arguments:
+            bins: int
+                The number of bins in which to histogram the data. Passed 
+                directly to plt.hist.
+                (default: 50)
+            hist_range: tuple(number, number)
+                Indicated the range in which to bin data. Passed directly to
+                plt.hist. If None, it is set to (0, 4) for gain-corrected data
+                and to (0, 150) otherwise.
+                (default: None)
+            text_pos: str
+                Indicates where information about mean and standard deviation
+                appears on the plot. If 'right', appears in upper right. If 
+                'left', appears in upper left.
+                (default: 'right')
+            save: bool
+                If True, saves the plot to 'save_dir'.
+            save_dir: str
+                The directory to which the file will be saved. If left
+                unspecified, the file will be saved to the current directory.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            ext: str
+                The file extension to the saved file.
+                (default: '.pdf')
         '''
-
-        fwhm = np.flatten(self._fwhm_map)
-
+        # Setting some plot parameters and converting units based on whether 
+        # the supplied data is gain-corrected.
         if self._gain_corrected:
-            hist_range = (0, 4)
+            if hist_range is None:
+                hist_range = (0, 4)
             mean_fwhm = str(int(round(np.mean(fwhm) * 1000, 0)))
             stdv_fwhm = str(int(round(np.std(fwhm) * 1000, 0)))
             fwhm_units = 'eV'
             axis_units = 'keV'
         else:
-            hist_range = (0, 150)
+            if hist_range is None:
+                hist_range = (0, 150)
             mean_fwhm = str(round(np.mean(fwhm), 0))
             stdv_fwhm = str(round(np.std(fwhm), 0))
             fwhm_units = 'channels'
             axis_units = 'channels'
 
+        # Make the plot
         plt.figure()
+        ax = plt.axes() # need axes object for text positioning
+        fwhm = self._fwhm_map.flatten()
+        plt.hist(fwhm, bins=bins, range=hist_range, histtype='stepfilled')
 
-        plt.hist(fwhm, bins=50, range=hist_range, histtype='stepfilled')
+        # Setting text position based on user input. This will display the mean
+        # and standard deviation of the fwhm data.
+        if text_pos == 'right':
+            left_side = 0.5
+        elif text_pos == 'left':
+            left_side = 0.05
+        else:
+            raise ValueError("'text_pos' can be either 'right' or 'left'. "
+                + f"Instead {text_pos} was passed")
 
-        bot, top = plt.ylim()
-        left, right = plt.xlim()
-
-        plt.text(right * 0.5, top * 0.8, 
-            f'Mean = {mean_fwhm} {fwhm_units}', fontsize = 16)
-        plt.text(right*0.5, top*0.6, 
-            f'1-Sigma = {stdv_fwhm} {fwhm_units}', fontsize = 16)
+        plt.text(left_side, 0.9, f'Mean = {mean_fwhm} {fwhm_units}', 
+            fontsize=14, transform=ax.transAxes)
+        plt.text(left_side, 0.8, f'1-Sigma = {stdv_fwhm} {fwhm_units}', 
+            fontsize=14, transform=ax.transAxes)
 
         plt.xlabel(f'FWHM ({axis_units})')
-        plt.ylabel('Pixels')
+        plt.ylabel('Pixels') 
+        plt.title(self.title('FWHM Histogram'))
 
 
 class Leakage(Experiment):
@@ -659,26 +754,62 @@ class GammaFlood(Experiment):
     A class containing important experiment parameters with methods to supply
     data analysis functions for gamma flood data.
 
-    Arguments:
+    Public attributes:
         filepath: str
             Path to gamma flood data. Should be a FITS file. Used to access
             data and to construct new file names.
         detector: str
             The detector ID.
         source: str
-            The X-ray source. Should correspond to the 'source' attribute of a
-            'Line' object. A dict of instantiated Line objects can be accessed
-            by 'gamma.Line.lines'
+            The X-ray source. Should correspond to the 'source' attribute 
+            of a 'Line' object. A dict of instantiated Line objects can be 
+            accessed by 'gamma.Line.lines'
         voltage: str
             Bias voltage in Volts
         temp: str
             Temperature of the detector in degrees Celsius
-
-    Keyword Arguments:
         etc: str
             Any other important information to include
+        count_map: 2D numpy.ndarray
+            A 32 x 32 array of floats. Each entry represents the number of
+            counts read by the detector pixel at the corresponding index.
+            (initialized to None)
+        gain: 2D numpy.ndarray
+            A 32 x 32 array of floats. Each entry represents its  
+            respective pixel's gain, where channels * gain = energy.
+            (initialized to None)
+        spectrum: 2D numpy.ndarray
+            This array represents a histogram wrt the energy of an event.
+            spectrum[0] is a 1D array of counts in each bin, and  
+            spectrum[1] is a 1D array of the middle enegies of each bin in 
+            keV. E.g., if the ith bin counted events between 2 keV and 4 
+            keV, then the value of spectrum[1, i] is 3. If None, defaults
+            to the value stored in self.spectrum.
+            (initialized to None)
     '''
     def __init__(self, filepath, detector, source, voltage, temp, etc=''):
+        '''
+        Initializes an instance of the 'GammaFlood' class.
+
+        Arguments:
+            filepath: str
+                Path to gamma flood data. Should be a FITS file. Used to access
+                data and to construct new file names.
+            detector: str
+                The detector ID.
+            source: str
+                The X-ray source. Should correspond to the 'source' attribute 
+                of a 'Line' object. A dict of instantiated Line objects can be 
+                accessed by 'gamma.Line.lines'
+            voltage: str
+                Bias voltage in Volts
+            temp: str
+                Temperature of the detector in degrees Celsius
+
+        Keyword Arguments:
+            etc: str
+                Any other important information to include
+        '''
         # Check that the source corresponds to a Line object.
         if source not in Line.lines:
             raise KeyError(f'''
@@ -686,6 +817,9 @@ class GammaFlood(Experiment):
                 {self.source}. Print 'gamma.Line.lines.keys() for a list of 
                 valid 'source' values, or call 'help(Line)' to see how to 
                 define a new Line object.''')
+
+        voltage = str(voltage)
+        temp = str(temp)
 
         # Remove any unit symbols from voltage and temperature
         numericize = str.maketrans('', '', string.ascii_letters)
