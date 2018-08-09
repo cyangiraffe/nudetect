@@ -835,7 +835,6 @@ class Leakage(Experiment):
         '''
 
 
-
 class GammaFlood(Experiment):
     '''
     A class containing important experiment parameters with methods to supply
