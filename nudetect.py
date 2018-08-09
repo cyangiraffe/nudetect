@@ -1375,7 +1375,7 @@ class GammaFlood(Experiment):
 
 
 # If this file is run as a script, the code below will run a complete pipeline
-# for gamma flood data analysis with default parameter values.
+# for an experiment's data analysis with default parameter values.
 
 if __name__ == '__main__':
 
