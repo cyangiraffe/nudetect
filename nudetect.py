@@ -11,6 +11,7 @@ import argparse
 
 # Data analysis packages
 import numpy as np
+import pandas as pd
 from astropy.io import fits
 from astropy.modeling import models, fitting
 import astropy.io.ascii as asciio
@@ -833,6 +834,16 @@ class Leakage(Experiment):
         '''
         TODO
         '''
+        # These lists will form the columns of a pandas DataFrame.
+        mode    = [] # Can be 'CP' or 'N' (charge-pump or normal)
+        voltage = [] # The bias voltage in volts
+        temp    = [] # The temperature in Celsius
+        mean    = [] # The mean leakage current across the pixels
+        stddev  = [] # The standard deviation of leakage across pixels
+
+        pass
+
+
 
 
 class GammaFlood(Experiment):
