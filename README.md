@@ -11,6 +11,7 @@ Currently, the package can be crudely installed by putting the 'nudetect.py' fil
 ### Required Packages
 
 * Numpy
+* Pandas
 * Astropy
 * Scipy
 * Matplotlib
