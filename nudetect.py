@@ -208,23 +208,21 @@ class Experiment:
             plt.savefig(save_path)
 
 
-    def pixel_map(self, values, value_label, cb_label='', vmin=None, vmax=None,
-        title=None, save=True, ext='.pdf', save_dir=''):
+    def pixel_map(self, value_label, values=None, cb_label='', vmin=None, 
+        vmax=None, title=None, save=True, ext='.pdf', save_dir=''):
         '''
         Construct a heatmap of counts across the detector using matplotlib.
 
         Arguments:
-            values: 2D array
-                A 32 x 32 array of numbers.
             value_label: str
                 A short label denoting what data is supplied in 'values'.
-                In the hover tooltip, the pixel's value will be labelled with 
-                this string. E.g., if value_label = 'Counts', the tooltip might
-                read 'Counts: 12744'. The color bar title is also set to this 
-                value. Also, value_label.lower() is prepended to the file name
-                if saving the plot.
+                This is used to determine various default values, like the 
+                attribute to pull data from, the title, and labels. Should be
+                'Gain', 'Count', or 'FWHM', for best results.
 
         Keyword Arguments:
+            values: 2D array
+                A array of numbers.
             cb_label: str
                 This string becomes the color bar label. If the empty string,
                 the color bar label is chosen based on 'value_label'.
@@ -253,27 +251,40 @@ class Experiment:
                 save_dir=save_dir)
 
         # Constructing the plot title, if none supplied
-        if not title:
+        if title is None:
             plot_type = f'{value_label} Map'
             title = self.title(plot_type)
 
-        # Set the color bar label, if not supplied
-        if not cb_label:
-            if 'gain' in value_label.lower():
+        # Set the color bar label and 'values', if not supplied
+        if 'gain' in value_label.lower():
+            if not cb_label: 
                 cb_label = 'Gain (eV/channel)'
-            elif 'count' in value_label.lower():
+            if values is None: 
+                values = self.gain
+
+        elif 'count' in value_label.lower():
+            if not cb_label: 
                 cb_label = 'Counts'
-            elif 'fwhm' in value_label.lower():
+            if values is None: 
+                values = self.count_map
+
+        elif 'fwhm' in value_label.lower():
+            if not cb_label: 
                 cb_label = 'FWHM (keV)'
+            if values is None: 
+                values = self.fwhm_map
+                
+        else: 
+            if not cb_label: 
+                cb_label = value_label
 
         # Formatting the figure
         fig = plt.figure()
-        masked = np.ma.masked_values(values, 0.0)
         current_cmap = mpl.cm.get_cmap('inferno')
         current_cmap.set_bad(color='gray')
         # The 'extent' kwarg is necessary to make axes flush to the image.
         plt.imshow(masked, vmin=vmin, vmax=vmax, extent=(0, 32, 0 , 32),
-            cmap='inferno')
+            cmap=current_cmap)
         c = plt.colorbar()
         c.set_label(cb_label, labelpad=10)
 
@@ -430,7 +441,7 @@ class Noise(Experiment):
         if type(gain_corrected) != bool:
             raise TypeError("'gain_corrected must be type 'bool'. Type "
                 + f"{type(gain_corrected)} was given.")
-
+ 
         self._gain_corrected = gain_corrected
 
         fwhm_map = np.loadtxt(fwhm_map)
@@ -438,6 +449,13 @@ class Noise(Experiment):
         if fwhm_map.shape != (32, 32):
             raise ValueError("'fwhm_map' should reference a 32 x 32 array."
                 + f"Instead an array of shape {fwhm_map.shape} was given.")
+
+        # Mask large values, taking into account whether fwhm is in units
+        # of channels or of keV.
+        if gain_corrected:
+            fwhm_map = np.ma.masked_where(fwhm_map > 5, fwhm_map)
+        else:
+            fwhm_map = np.ma.masked_where(fwhm_map > 400, fwhm_map)
 
         self._fwhm_map = fwhm_map
 
@@ -465,6 +483,13 @@ class Noise(Experiment):
         if fwhm_map.shape != (32, 32):
             raise ValueError("'fwhm_map' should be a 32 x 32 array."
                 + f"Instead an array of shape {fwhm_map.shape} was given.")
+
+        # Mask large values, taking into account whether fwhm is in units
+        # of channels or of keV.
+        if gain_corrected:
+            fwhm_map = np.ma.masked_where(fwhm_map > 5, fwhm_map)
+        else:
+            fwhm_map = np.ma.masked_where(fwhm_map > 400, fwhm_map)
 
         self._fwhm_map = fwhm_map
 
@@ -654,6 +679,14 @@ class Noise(Experiment):
                         plt.savefig(plot_path.format(row, col))
                         plt.close()
         
+
+        # Mask large values, taking into account whether fwhm is in units
+        # of channels or of keV.
+        if gain_bool:
+            fwhm_map = np.ma.masked_where(fwhm_map > 5, fwhm_map)
+        else:
+            fwhm_map = np.ma.masked_where(fwhm_map > 400, fwhm_map)
+
         self._fwhm_map = fwhm_map
         # Set '_gain_corrected' way down here to make sure the 'fwhm_map'
         # attribute was successfully set.
@@ -1143,6 +1176,8 @@ class GammaFlood(Experiment):
         if save:
             np.savetxt(save_path, count_map)
 
+        count_map = np.ma.masked_values(count_map, 0.0)
+
         # Storing count data in our 'GammaFlood' instance
         self.count_map = count_map
 
@@ -1327,6 +1362,7 @@ class GammaFlood(Experiment):
         if save_data:
             np.savetxt(data_path, gain)
 
+        gain = np.ma.masked_values(gain, 0.0)
         # Storing gain data in our 'GammaFlood' instance
         self.gain = gain
 
