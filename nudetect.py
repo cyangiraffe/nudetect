@@ -123,8 +123,8 @@ class Experiment:
         ### Constructing the path name
 
         # Construct the file name from the file name in 'self.datapath'.
-        filename = os.path.basename(self.datapath)
-        save_path = os.path.splitext(filename)[0]
+        filename = os.path.basename(self.datapath) # Extracts the filename
+        save_path = os.path.splitext(filename)[0] # Removes the extension
 
         # Map all whitespace characters and '.' to underscores
         trans = str.maketrans(
@@ -569,13 +569,13 @@ class Noise(Experiment):
         elif gain is None:
             gain = self.gain
 
-        # 'START' and 'END' denote the indices between which 'data['TEMP']'
+        # 'start' and 'end' denote the indices between which 'data['TEMP']'
         # takes on a resonable value and the detector position is the desired 
-        # position. START is the first index with a temperature greater than 
-        # -20 C, and END is the last such index.
+        # position. start is the first index with a temperature greater than 
+        # -20 C, and end is the last such index.
         mask = np.multiply((data['DET_ID'] == self.pos), (data['TEMP'] > -20))
-        START = np.argmax(mask)
-        END = len(mask) - np.argmax(mask[::-1])
+        start = np.argmax(mask)
+        end = len(mask) - np.argmax(mask[::-1])
         del mask
 
         maxchannel = 1000
@@ -587,9 +587,9 @@ class Noise(Experiment):
         chan_map = [[[] for col in range(33)] for row in range(33)]
         # Iterating through pixels
         for col in range(32):
-            RAWXmask = np.array(data['RAWX'][START:END]) == col
+            RAWXmask = np.array(data['RAWX'][start:end]) == col
             for row in range(32):
-                RAWYmask = np.array(data['RAWY'][START:END]) == row
+                RAWYmask = np.array(data['RAWY'][start:end]) == row
                 # Storing all readings for the current pixel in 'pulses'.
                 inds = np.nonzero(np.multiply(RAWXmask, RAWYmask))
                 pulses = data.field('PH_RAW')[inds]
@@ -779,12 +779,12 @@ class Leakage(Experiment):
                 The detector ID.
             pos: int
                 The detector position.
-            temps: 1D array-like of numbers
+            temps: set of numbers
                 The temperatures in degrees Celsius.
-            cp_voltages: 1D array-like of numbers:
+            cp_voltages: set or array-like of numbers:
                 The bias voltages in volts used for testing in 
                 charge-pump mode.
-            n_voltages: 1D array-like of numbers:
+            n_voltages: set or array-like of numbers:
                 The bias voltages in volts used for testing in 
                 normal mode.
 
@@ -797,11 +797,17 @@ class Leakage(Experiment):
         numericize = str.maketrans('', '', string.ascii_letters)
         temp = temp.translate(numericize)
 
+        # Convert temperatures and voltages to sets to avoid repeats
+        temps = set(temps)
+        cp_voltages = set(cp_voltages)
+        n_voltages = set(n_voltages)
+
         self.datapath = datapath
         self.detector = detector
         self.temps = temps
         self.cp_voltages = cp_voltages
         self.n_voltages = n_voltages
+        self.all_voltages = cp_voltages | n_voltages
         self.pos = int(pos)
         self.etc = etc
 
@@ -834,16 +840,105 @@ class Leakage(Experiment):
         '''
         TODO
         '''
-        # These lists will form the columns of a pandas DataFrame.
-        mode    = [] # Can be 'CP' or 'N' (charge-pump or normal)
-        voltage = [] # The bias voltage in volts
-        temp    = [] # The temperature in Celsius
-        mean    = [] # The mean leakage current across the pixels
-        stddev  = [] # The standard deviation of leakage across pixels
+        # This dict will form a pandas DataFrame. Initialized as a temporary
+        # private attribute for easy access by the '_process_leakage_data'
+        # helper method.
+        self._table = {
+            'mode'    : [], # Can be 'CP' or 'N' (charge-pump or normal)
+            'voltage' : [], # The bias voltage in volts
+            'temp'    : [], # The temperature in Celsius
+            'mean'    : [], # The mean leakage current across the pixels
+            'std'     : [], # The corresponding standard deviation
+            'outliers': []  # Number of outlier pixels
+        }
 
-        pass
+        # Sets 'filename' to the last directory in 'self.datapath'.
+        filename = os.path.basename(self.datapath)
+
+        # 'start' and 'end' define the indices of the pixels at the given 
+        # detector position are. Temporary private attributes for easy
+        # access by the '_process_leakage_data' helper method.
+        self._start = -1024 * (1 + self.pos)
+        self._end = start + 1024
+
+        # Iterate through temperatures
+        for temp in self.temps:
+            # First, construct maps 'cp_zero' and 'n_zero' of the leakage 
+            # current at bias voltage of zero as a control.
+            cp_data = asciio.read(f'{self.datapath}/{filename}_{temp}.C0V.txt')
+            n_data = asciio.read(f'{self.datapath}/{filename}_{temp}.N0V.txt')
+            cp_zero = np.zeros((32, 32))
+            n_zero = np.zeros((32, 32))
+
+            for i in range(start, end):
+                # Pixel coordinates in charge pump mode
+                cp_col = cp_data.field('col4')[i]
+                cp_row = cp_data.field('col5')[i]
+                # Pixel coordinates in normal mode
+                n_col = n_data.field('col4')[i]
+                n_row = n_data.field('col5')[i]
+                # Leakage at this pixel in each mode.
+                cp_zero[cp_row, cp_col] = cp_data.field('col6')[i]
+                n_zero[n_row, n_col] = n_data.field('col6')[i]
+
+            # Iterating though non-zero bias voltages
+            for voltage in self.all_voltages:
+                # If we tested this voltage using charge-pump mode,
+                # construct a map of the leakage current appropriately.
+                if voltage in self.cp_voltages:
+                    data = asciio.read(
+                        f'{self.datapath}/{filename}_{temp}.C{voltage}V.txt')
+                    self._process_leakage_data(data, 'CP', temp, voltage)
+                           
+                # If we tested this voltage using normal mode,
+                # construct a map of the leakage current appropriately.
+                if voltage in self.n_voltages:
+                    data = asciio.read(
+                        f'{self.datapath}/{filename}_{temp}.N{voltage}V.txt')
+                    self._process_leakage_data(data, 'N', temp, voltage)
+
+        self.leakage_stats = pd.DataFrame(self._table)
+
+        # Deleting temporary private attributes.
+        del self._table, self._start, self._end
+
+        return self.leakage_stats
 
 
+    def _process_leakage_data(self, data, mode, temp, voltage):
+        '''
+        Helper function for 'leakage'.
+        '''
+        leak_map = np.zeros((32, 32))
+
+        if mode == 'CP':
+            div = 3000:
+        elif mode == 'N':
+            div = 150
+
+        # Generating a leakage current map at the current voltage,
+        # realtive to what we had at 0V.
+        for i in range(start, end):
+            col = data.field('col4')[i]
+            row = data.field('col5')[i]
+            leak_map[row, col] = (data.field('col6')[i] 
+                - cp_zero[row, col]) * (1.7e3) / 3000
+
+        masked_map = np.ma.masked_where(leak_map > 100, leak_map)
+        # 'outliers' in the number of pixels whose leakage 
+        # currents are 5 standard deviations from the mean.
+        outliers = np.sum(np.absolute(
+            leak_map - np.mean(leak_map)
+            )) > 5 * np.std(leak_map)
+        # Record the data
+        table['mode'].append(mode)
+        table['voltage'].append(voltage)
+        table['temp'].append(temp)
+        table['mean'].append(np.mean(masked_map))
+        table['std'].append(np.std(masked_map))
+        table['outliers'].append(outliers)
+
+        return masked_map
 
 
 class GammaFlood(Experiment):
@@ -1019,18 +1114,18 @@ class GammaFlood(Experiment):
         # otherwise. Note that this is the reverse of numpy's convention for 
         # masking arrays.
 
-        # 'START' and 'END' denote the indices between which 'data['TEMP']'
-        # takes on a resonable value. START is the first index with a 
-        # temperature greater than -20 C, and END is the last such index.
+        # 'start' and 'end' denote the indices between which 'data['TEMP']'
+        # takes on a resonable value. start is the first index with a 
+        # temperature greater than -20 C, and end is the last such index.
         mask = data['TEMP'] > -20
-        START = np.argmax(mask)
-        END = len(mask) - np.argmax(mask[::-1])
+        start = np.argmax(mask)
+        end = len(mask) - np.argmax(mask[::-1])
         del mask
 
         # Masking out non-positive pulse heights
-        PHmask = 0 < np.array(data['PH'][START:END])
+        PHmask = 0 < np.array(data['PH'][start:end])
         # Masking out artificially stimulated events
-        STIMmask = np.array(data['STIM'][START:END]) == 0
+        STIMmask = np.array(data['STIM'][start:end]) == 0
         # Combining the above masks
         TOTmask = np.multiply(PHmask, STIMmask)
 
@@ -1038,9 +1133,9 @@ class GammaFlood(Experiment):
         count_map = np.zeros((32, 32))
 
         for i in range(32):
-            RAWXmask = np.array(data['RAWX'][START:END]) == i
+            RAWXmask = np.array(data['RAWX'][start:end]) == i
             for j in range(32):
-                RAWYmask = np.array(data['RAWY'][START:END]) == j
+                RAWYmask = np.array(data['RAWY'][start:end]) == j
                 count_map[i, j] = np.sum(np.multiply(
                     TOTmask, np.multiply(RAWXmask, RAWYmask)))
 
@@ -1128,8 +1223,8 @@ class GammaFlood(Experiment):
             data = file[1].data
 
         mask = data['TEMP'] > -20
-        START = np.argmax(mask)
-        END = len(mask) - np.argmax(mask[::-1])
+        start = np.argmax(mask)
+        end = len(mask) - np.argmax(mask[::-1])
         del mask
 
         maxchannel = 10000
@@ -1138,12 +1233,12 @@ class GammaFlood(Experiment):
 
         # Iterating through pixels
         for x in range(32):
-            RAWXmask = data.field('RAWX')[START:END] == x
+            RAWXmask = data.field('RAWX')[start:end] == x
             for y in range(32):
-                RAWYmask = data.field('RAWY')[START:END] == y
+                RAWYmask = data.field('RAWY')[start:end] == y
                 # Getting peak height in 'channels' for all events for the 
                 # current pixel.
-                channel = data.field('PH')[START:END][np.nonzero(
+                channel = data.field('PH')[start:end][np.nonzero(
                     np.multiply(RAWXmask, RAWYmask))]
 
                 # If there were events at this pixel, fit the strongest peak
@@ -1304,12 +1399,12 @@ class GammaFlood(Experiment):
         with fits.open(self.datapath) as file:
             data = file[1].data
 
-        # 'START' and 'END' denote the indices between which 'data['TEMP']'
-        # takes on a resonable value. START is the first index with a 
-        # temperature greater than -20 C, and END is the last such index.
+        # 'start' and 'end' denote the indices between which 'data['TEMP']'
+        # takes on a resonable value. start is the first index with a 
+        # temperature greater than -20 C, and end is the last such index.
         temp_mask = data['TEMP'] > -20
-        START = np.argmax(temp_mask)
-        END = len(temp_mask) - np.argmax(temp_mask[::-1])
+        start = np.argmax(temp_mask)
+        end = len(temp_mask) - np.argmax(temp_mask[::-1])
         del temp_mask
 
         # PH_COM is a list of length 9 corresponding to the charge in pixels 
