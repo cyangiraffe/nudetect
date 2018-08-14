@@ -27,52 +27,61 @@ from nudetect import GammaFlood
 # experiment, and will be populated with analyzed data as we call its methods
 # for processing the raw gamma flood data.
 gamma = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
+					save_dir='outputs/{}', # default save directory for outputs
 					detector='H100', # detector ID
 					source='Am241', # Used to fit peaks and get gain data
 					voltage=0, # in volts
 					temp=-10) # in degrees celsius
 
+# Note: The '{}' in 'save_dir' is automatically formatted to the detector ID.
+# In this case, save_dir == 'outputs/H100'
+
+# At this point, we have some processed data attributes initialized, but not
+# contianing any data:
+#	gamma.count_map: None
+#   gamma.gain:      None
+#	gamma.spectrum:  None
+
 #
 # Processing data
 #
 
-# 'count_map' is a 32 x 32 array with count data for each pixel. As called
-# here, it will store the count data in the attribute 'gamma.count_map', 
-# and in an ascii file in the current directory.
+# 'count_map' is a 32 x 32 array with count data for each pixel. It will store 
+# this output in an ascii file in the directory 'outputs/H100'.
 gamma.count_map()
 
 # 'gain' is a 32 x 32 array with gain data for each pixel. Here, a spectrum 
-# plot is saved for each individual pixel in the directory 'pixels/H100' and 
-# gain data is saved to a directory 'energy', to 'gain', and to 'gamma.gain'.
-gain = gamma.quick_gain(plot_dir='pixels/H100', data_dir='energy')
+# plot is saved for each individual pixel in the directory 
+# 'outputs/H100/pixels', and the gain data saved to 'outputs/H100'.
+gamma.quick_gain(plot_sub='pixels')
 
 # 'spectrum' is a 2 x 10000 array representing the whole-detector spectrum.
-# The array is stored in 'gamma.spectrum' and a file in 'energy'.
-# Since we don't supply gain data as a parameter, it takes the data from the
-# attribute 'gamma.gain'.
-gamma.get_spectrum(save_dir='energy')
+# This output is saved to 'outputs/H100'.
+gamma.get_spectrum()
 
+
+# Now, our processed data attributes have been populated with data:
+#	gamma.count_map.shape: (32, 32)
+#   gamma.gain.shape:      (32, 32)
+#	gamma.spectrum.shape:  (2, 10000)
 
 #
 # Plotting
 #
 
-# Plots and fits 'spectrum'. By default, this saves the plot to the directory
-# 'energy' but doesn't plt.show() the figure. Here we fine tune how far below
-# the centroid we consider for fitting with the kwarg 'fit_low'.
-gamma.plot_spectrum(save_dir='energy', fit_low=77)
+# The plotting methods called below draw data from the processed 
+# data attributes populated above.
 
-# Plots a histogram that bins pixels by their event counts. We've configured
-# it here to not save a file, but to show the result
-gamma.count_hist(save=False)
-plt.show()
+# Plots and fits 'spectrum'.
+gamma.plot_spectrum()
 
-# Plots heatmaps of counts and gain for each pixel. The functions will save
-# the figures to the current directory. The second arguments of each are used
-# in labels and plot titles. Here, we _have_ to supply the array of data
-# being plotted.
-gamma.pixel_map(gamma.count_map, 'Counts')
-gamma.pixel_map(gain, 'Gain')
+# Plots a histogram that bins pixels by their event counts.
+gamma.count_hist()
+
+# Plots heatmaps of counts and gain for each pixel. Here, we specify what type
+# of data we want to plot, and the method figures out the rest.
+gamma.pixel_map('Count')
+gamma.pixel_map('Gain')
 ```
 
 ## Developer Notes
