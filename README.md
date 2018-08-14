@@ -38,19 +38,20 @@ gamma = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
 
 # 'count_map' is a 32 x 32 array with count data for each pixel. As called
 # here, it will store the count data in the attribute 'gamma.count_map', 
-# and in an ascii file in the current directory.
-gamma.count_map()
+# and in an ascii file in the directory 'outputs/H100'.
+count_map = gamma.count_map(save_dir='outputs/{}')
 
 # 'gain' is a 32 x 32 array with gain data for each pixel. Here, a spectrum 
-# plot is saved for each individual pixel in the directory 'pixels/H100' and 
-# gain data is saved to a directory 'energy', to 'gain', and to 'gamma.gain'.
-gain = gamma.quick_gain(plot_dir='pixels/H100', data_dir='energy')
+# plot is saved for each individual pixel in the directory 
+# 'outputs/H100/pixels' and gain data is saved to a directory 'outputs/H100', to 'gain', and to 'gamma.gain'.
+gain = gamma.quick_gain(plot_dir='outputs/{}/pixels', 
+	data_dir='outputs/{}'
 
 # 'spectrum' is a 2 x 10000 array representing the whole-detector spectrum.
 # The array is stored in 'gamma.spectrum' and a file in 'energy'.
 # Since we don't supply gain data as a parameter, it takes the data from the
 # attribute 'gamma.gain'.
-gamma.get_spectrum(save_dir='energy')
+gamma.get_spectrum(save_dir='outputs/{}')
 
 
 #
@@ -60,18 +61,17 @@ gamma.get_spectrum(save_dir='energy')
 # Plots and fits 'spectrum'. By default, this saves the plot to the directory
 # 'energy' but doesn't plt.show() the figure. Here we fine tune how far below
 # the centroid we consider for fitting with the kwarg 'fit_low'.
-gamma.plot_spectrum(save_dir='energy', fit_low=77)
+gamma.plot_spectrum(save_dir='outputs/{}')
 
 # Plots a histogram that bins pixels by their event counts. We've configured
 # it here to not save a file, but to show the result
-gamma.count_hist(save=False)
-plt.show()
+gamma.count_hist(save_dir='outputs/{}')
 
 # Plots heatmaps of counts and gain for each pixel. The functions will save
 # the figures to the current directory. The second arguments of each are used
 # in labels and plot titles. Here, we _have_ to supply the array of data
 # being plotted.
-gamma.pixel_map(gamma.count_map, 'Counts')
+gamma.pixel_map(count_map, 'Counts')
 gamma.pixel_map(gain, 'Gain')
 ```
 
