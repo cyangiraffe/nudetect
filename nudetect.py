@@ -216,11 +216,9 @@ class Experiment:
                 A 32 x 32 array of numbers.
             value_label: str
                 A short label denoting what data is supplied in 'values'.
-                In the hover tooltip, the pixel's value will be labelled with 
-                this string. E.g., if value_label = 'Counts', the tooltip might
-                read 'Counts: 12744'. The color bar title is also set to this 
-                value. Also, value_label.lower() is prepended to the file name
-                if saving the plot.
+                The strings 'Gain', 'Count', and 'FWHM', if supplied, will
+                trigger some presets regarding file name, plot title, and 
+                plot label formatting.
 
         Keyword Arguments:
             cb_label: str
