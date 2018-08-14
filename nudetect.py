@@ -108,7 +108,9 @@ class Experiment:
                 A Unix/Linux/MacOS style path that can be used to save data
                 and plots in an organized way.
         '''
-        ### Handling exceptions and potential errors
+        #
+        # Handling exceptions and potential errors
+        #
 
         # If 'ext' does not start with a '.', fix it.
         if ext and ext[0] != '.':
@@ -120,7 +122,9 @@ class Experiment:
             if not os.path.exists(save_dir):
                 raise ValueError(f'The directory {save_dir} does not exist.')
 
-        ### Constructing the path name
+        #
+        # Constructing the path name
+        #
 
         # Construct the file name from the file name in 'self.datapath'.
         filename = os.path.basename(self.datapath) # Extracts the filename
@@ -273,6 +277,13 @@ class Experiment:
                 cb_label = 'FWHM (keV)'
             if values is None: 
                 values = self.fwhm_map
+
+        elif 'leak' in value_label.lower():
+            if not cb_label:
+                cb_label = 'Leakage Current (pA)'
+            if values is None:
+                raise ValueError('Must manually supply data for leakage '
+                    + 'current. No class attributes store this data.')
                 
         else: 
             if not cb_label: 
@@ -848,16 +859,24 @@ class Leakage(Experiment):
     # Small helper method: 'title'.
     #
 
-    # TODO: There's a lot to do for this method. Probably pass voltage as
-    # an argument and stuff. Or not? idk.
-    def title(self, plot):
+    def title(self, plot, temp=None, voltage=None):
         '''
         Returns a plot title based on the instance's attributes and the 
         type of plot. 'plot' is a str indicating the type of plot.
         '''
-        temp = r'$' + self.temp + r'^{\circ}$C'
+        # Formatting the temperature and voltage conditions in the title,
+        # if specified.
+        conditions = ''
+        if temp is not None:
+            temp = r'$' + temp + r'^{\circ}$C'
+            conditions += f'({temp}'
+        if voltage is not None:
+            voltage = r'$' + voltage + r' V$'
+            conditions += f', {voltage}'
+        if conditions:
+            conditions += ')'
 
-        title = f'Noise {self.detector} {plot} ({temp})'
+        title = f'{self.detector} Leakage Current {plot} {conditions}'.strip()
 
         if self.etc:
             title += f' -- {self.etc}'
@@ -869,19 +888,26 @@ class Leakage(Experiment):
     # Heavy-lifting data analysis method: 'leakage'
     #
 
-    def leakage(self, save=True, save_dir='', ext='.txt'):
+    def leakage(self, save_data=True, data_dir='', data_ext='.csv',
+        save_plot=True, plot_dir='', plot_ext='.pdf'):
         '''
         TODO
         '''
-        # This dict will form a pandas DataFrame. Initialized as a temporary
-        # private attribute for easy access by the '_process_leakage_data'
-        # helper method.
+        # Generating a save path, if necessary
+        if save_data:
+            data_path = self.construct_path(description='leak_stats', 
+                ext=data_ext, save_dir=data_dir)
+        if save_plot:
+            hist_path = self.construct_path(description='leak_hist',
+                ext=plot_ext, save_dir=plot_dir)
+
+        # This dict will form a pandas DataFrame.
         self._table = {
             'mode'    : [], # Can be 'CP' or 'N' (charge-pump or normal)
             'voltage' : [], # The bias voltage in volts
             'temp'    : [], # The temperature in Celsius
             'mean'    : [], # The mean leakage current across the pixels
-            'std'     : [], # The corresponding standard deviation
+            'stddev'  : [], # The corresponding standard deviation
             'outliers': []  # Number of outlier pixels
         }
 
@@ -889,8 +915,7 @@ class Leakage(Experiment):
         filename = os.path.basename(self.datapath)
 
         # 'start' and 'end' define the indices of the pixels at the given 
-        # detector position are. Temporary private attributes for easy
-        # access by the '_process_leakage_data' helper method.
+        # detector position are.
         self._start = -1024 * (1 + self.pos)
         self._end = start + 1024
 
@@ -919,56 +944,77 @@ class Leakage(Experiment):
                 # If we tested this voltage using charge-pump mode,
                 # construct a map of the leakage current appropriately.
                 if voltage in self.cp_voltages:
-                    data = asciio.read(
+                    # Read in the data file for the current voltage and 
+                    # temperature in CP mode.
+                    self._data = asciio.read(
                         f'{self.datapath}/{filename}_{temp}.C{voltage}V.txt')
-                    self._process_leakage_data(data, 'CP', temp, voltage)
+                    # Process raw data
+                    leak_map = self._process_leakage_data('CP', temp, voltage)
+                    # Plot leakage current map
+                    self.pixel_map('Leakage CP', leak_map)
                            
                 # If we tested this voltage using normal mode,
                 # construct a map of the leakage current appropriately.
                 if voltage in self.n_voltages:
-                    data = asciio.read(
+                    # Read in the data file for the current voltage and 
+                    # temperature in CP mode.
+                    self._data = asciio.read(
                         f'{self.datapath}/{filename}_{temp}.N{voltage}V.txt')
-                    self._process_leakage_data(data, 'N', temp, voltage)
+                    # Process raw data
+                    leak_map = self._process_leakage_data('N', temp, voltage)
+                    # Plot leakage current map
+                    self.pixel_map('Leakage N', leak_map)
+
 
         self.leakage_stats = pd.DataFrame(self._table)
 
         # Deleting temporary private attributes.
-        del self._table, self._start, self._end
+        del self._table, self._start, self._end, self._data
+
+        if save_data:
+            self.leakage_stats.to_csv(save_path)
 
         return self.leakage_stats
 
 
-    def _process_leakage_data(self, data, mode, temp, voltage):
+    def _process_leakage_data(self, mode, temp, voltage):
         '''
-        Helper function for 'leakage'.
+        Helper function for 'leakage'. Parameters that correspond
+        to columns of the table generated are passed to this function
+        as arguments. Other parameters are passed using temporary private
+        attributes of this instance generated in the 'leakage' method.
         '''
         leak_map = np.zeros((32, 32))
 
+        # Set a conversion constant based on the mode in which the data
+        # was taken. 
         if mode == 'CP':
-            div = 3000:
+            const = 1.7e3 / 3000
         elif mode == 'N':
-            div = 150
+            const = 1.7e3 / 150
 
         # Generating a leakage current map at the current voltage,
         # realtive to what we had at 0V.
-        for i in range(start, end):
-            col = data.field('col4')[i]
-            row = data.field('col5')[i]
+        for i in range(self._start, self._end):
+            col = self._data.field('col4')[i]
+            row = self._data.field('col5')[i]
             leak_map[row, col] = (data.field('col6')[i] 
-                - cp_zero[row, col]) * (1.7e3) / 3000
+                - cp_zero[row, col]) * const
 
         masked_map = np.ma.masked_where(leak_map > 100, leak_map)
+
         # 'outliers' in the number of pixels whose leakage 
         # currents are 5 standard deviations from the mean.
         outliers = np.sum(np.absolute(
             leak_map - np.mean(leak_map)
             )) > 5 * np.std(leak_map)
+
         # Record the data
         table['mode'].append(mode)
         table['voltage'].append(voltage)
         table['temp'].append(temp)
         table['mean'].append(np.mean(masked_map))
-        table['std'].append(np.std(masked_map))
+        table['stddev'].append(np.std(masked_map))
         table['outliers'].append(outliers)
 
         return masked_map
