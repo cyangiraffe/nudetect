@@ -69,7 +69,29 @@ class Experiment:
     A base class for classes representing various detector tests, like 
     GammaFlood and Noise. This houses some methods that all such classes share.
     '''
-    def construct_path(self, description='', ext='', save_dir='', etc=''):
+
+    # A class attribute for removing letters from strings. Used in subclasses
+    # when formatting units.
+    numericize = str.maketrans('', '', string.ascii_letters)
+
+
+    def _set_save_dir(self, save_dir):
+        '''
+        A helper method for initializing a 'save_dir' attribute. Must be called
+        after the 'detector' attribute is initialized.
+        '''
+        # If a directory was supplied, insert the detector ID where appropriate
+        # and check that the resulting directory exists.
+        if save_dir:
+            save_dir = save_dir.format(self.detector)
+            if not os.path.exists(save_dir):
+                raise ValueError(f'The directory {save_dir} does not exist.')
+
+        self.save_dir = save_dir
+
+
+    def construct_path(self, description='', ext='', save_dir='', sub_dir='', 
+        etc=''):
         '''
         Constructs a path for saving data and figures based on user input. 
         If the string passed to 'save_dir' has an empty pair of curly braces 
@@ -92,13 +114,19 @@ class Experiment:
                 will be appended to the file name.
                 (default: '')
             save_dir: str
-                The directory to which the file will be saved. If left
-                unspecified, the file will be saved to the current directory.
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
                 If the string passed to 'save_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
                 save_dir == 'figures/{}/pixels', then the directory that 
                 'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            sub_dir: str
+                A path to a sub-directory of 'save_dir' to which a file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
                 (default: '')
 
         Return:
@@ -112,11 +140,26 @@ class Experiment:
         if ext and ext[0] != '.':
             ext = f'.{ext}'
 
-        # Check that the save directory exists
+
+        # If no 'save_dir' argument was supplied, take instead the value in 
+        # the 'save_dir' attribute.
+        if not save_dir:
+            save_dir = self.save_dir
+
+        # Append the subdirectory 'sub_dir' to the path, if specified.
+        if sub_dir and save_dir:
+            save_dir += f'/{sub_dir}'
+        elif sub_dir:
+            save_dir = sub_dir
+
+        # If the 'save_dir' argument was supplied, format it to include the 
+        # detector ID in place of '{}' and check that the resulting directory
+        # exists.
         if save_dir:
             save_dir = save_dir.format(self.detector)
             if not os.path.exists(save_dir):
                 raise ValueError(f'The directory {save_dir} does not exist.')
+
 
         ### Constructing the path name
 
@@ -172,13 +215,19 @@ class Experiment:
                 If True, 'spectrum' will be saved as an ascii file. Parameters 
                 relevant to this saving are below
             save_dir: str
-                The directory to which the  file will be saved. If left
-                unspecified, the file will be saved to the current directory.
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
                 If the string passed to 'save_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            sub_dir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -238,8 +287,19 @@ class Experiment:
             save: bool
                 If True, saves the plot to a file.
             save_dir: str
-                The directory to which the plot file will be saved. If 
-                unspecified, the file will be saved to the current directory.
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            sub_dir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
                 (default: '')
         '''
         # Generate a save path, if needed.
@@ -312,6 +372,18 @@ class Noise(Experiment):
             The temperature in degrees Celsius.
         pos: int
             The detector position.
+        save_dir: str
+            A default directory to save file outputs to from this instance's 
+            methods. Method arguments let one choose a subdirectory of this 
+            path, or override it altogether.
+
+            If the string passed to 'save_dir' has an empty pair of curly 
+            braces '{}', they will be replaced by the detector ID 
+            'self.detector'. For example, if self.detector == 'H100' and 
+            save_dir == 'figures/{}/pixels', then the directory that 
+            'save_path' points to is 'figures/H100/pixels'.
+            (default: '')
+
         gain: 32 x 32 numpy.ndarray
             Pixel-by-pixel gain data for the detector. This can be supplied
             after initialization though the 'gain' attribute. Do not supply
@@ -336,7 +408,7 @@ class Noise(Experiment):
             (initialized to None)
     '''
     def __init__(self, filepath, detector, voltage, temp, pos, gain=None, 
-        etc=''):
+        save_dir='', etc=''):
         '''
         Initialized an instance of the 'Noise' class.
 
@@ -358,15 +430,27 @@ class Noise(Experiment):
                 after initialization though the 'gain' attribute. Do not supply
                 a dummy value here if no gain is available. The methods of this
                 class take care of that.
+            save_dir: str
+                A default directory to save file outputs to from this 
+                instance's  methods. Method arguments let one choose a 
+                subdirectory of this path, or override it altogether.
+
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
             etc: str
                 Other important information to append to created files's names.
         '''
-        # Remove any unit symbols from voltage and temperature
+        
         temp = str(temp)
         voltage = str(voltage)
-        numericize = str.maketrans('', '', string.ascii_letters)
-        temp = temp.translate(numericize)
-        voltage = voltage.translate(numericize)
+
+        # Remove any unit symbols from voltage and temperature
+        temp = temp.translate(self.numericize)
+        voltage = voltage.translate(self.numericize)
 
         # If gain is supplied, make sure it's a 32 x 32 array
         if gain is not None and gain.shape != (32, 32):
@@ -387,6 +471,8 @@ class Noise(Experiment):
         self.voltage = voltage
         self.pos = int(pos)
         self.etc = etc
+
+        self._set_save_dir(save_dir)
 
     #
     # Small helper methods and such: 'title', 'load_fwhm_map', 'set_fwhm_map', 
@@ -506,8 +592,8 @@ class Noise(Experiment):
     # Heavy lifting data analysis method: 'noise_map'
     #
 
-    def noise_map(self, gain=None, save_plot=True, plot_dir='',
-        plot_ext='.pdf', save_data=True, data_dir='', data_ext='.txt'):
+    def noise_map(self, gain=None, save_plot=True, plot_dir='', plot_sub='',
+        plot_ext='.pdf', save_data=True, data_dir='', data_sub='', data_ext='.txt'):
         '''
         Calculates the noise FWHM for each pixel and generates a noise count
         map. Also plots a noise spectrum for each pixel.
@@ -523,13 +609,19 @@ class Noise(Experiment):
                 the figure.
                 (default: True)
             plot_dir: str
-                The directory to which the plot file will be saved. If left
-                unspecified, the file will be saved to the current directory.
-                If the string passed to 'save_dir' has an empty pair of curly 
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'plot_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                plot_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            plot_sub: str
+                A path to a sub-directory of 'plot_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'plot_dir'. 
                 (default: '')
             plot_ext: str
                 The file name extension for the plot file.
@@ -538,13 +630,19 @@ class Noise(Experiment):
                 If True, saves gain data as a .txt file.
                 (default: True)
             data_dir: str
-                The directory to which the gain file will be saved. If left
-                unspecified, the file will be saved to the current directory.
-                If the string passed to 'save_dir' has an empty pair of curly 
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'data_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                data_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            data_sub: str
+                A path to a sub-directory of 'data_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'data_dir'. 
                 (default: '')
             data_ext: str
                 The file name extension for the gain file. 
@@ -573,13 +671,13 @@ class Noise(Experiment):
         # Generating the save paths, if needed.
         if save_data:
             fwhm_path = self.construct_path(ext=data_ext, save_dir=data_dir, 
-                description='fwhm_data', etc=etc)
+                sub_dir=data_sub, description='fwhm_data', etc=etc)
             count_path = self.construct_path(ext=data_ext, save_dir=data_dir,
-                description='count_data', etc=etc)
+                sub_dir=data_sub, description='count_data', etc=etc)
 
         if save_plot:
             plot_path = self.construct_path(save_dir=plot_dir, etc=etc_plot,
-                description='pix_spectrum', ext=plot_ext)
+                sub_dir=plot_sub, description='pix_spectrum', ext=plot_ext)
 
         # Get data from noise FITS file
         with fits.open(self.filepath) as file:
@@ -702,7 +800,7 @@ class Noise(Experiment):
     #
 
     def fwhm_hist(self, bins=50, hist_range=None, save=True, save_dir='', 
-        ext='.pdf', text_pos='right'):
+        sub_dir='', ext='.pdf', text_pos='right'):
         '''
         Plots a histogram of the fwhms for the noise of each pixel.
 
@@ -724,18 +822,28 @@ class Noise(Experiment):
             save: bool
                 If True, saves the plot to 'save_dir'.
             save_dir: str
-                The directory to which the file will be saved. If left
-                unspecified, the file will be saved to the current directory.
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
                 If the string passed to 'save_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
                 save_dir == 'figures/{}/pixels', then the directory that 
                 'save_path' points to is 'figures/H100/pixels'.
                 (default: '')
+            sub_dir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
+                (default: '')
             ext: str
                 The file extension to the saved file.
                 (default: '.pdf')
         '''
+        if save:
+            save_path = self.construct_path(description='fwhm_map',
+                save_dir=save_dir, sub_dir=sub_dir, ext=ext)
+
         # Setting some plot parameters and converting units based on whether 
         # the supplied data is gain-corrected.
         if self._gain_corrected:
@@ -777,6 +885,7 @@ class Noise(Experiment):
         plt.xlabel(f'FWHM ({axis_units})')
         plt.ylabel('Pixels') 
         plt.title(self.title('FWHM Histogram'))
+        plt.savefig(save_path)
 
 
 class Leakage(Experiment):
@@ -803,6 +912,18 @@ class GammaFlood(Experiment):
             Temperature of the detector in degrees Celsius
         etc: str
             Any other important information to include
+        save_dir: str
+            A default directory to save file outputs to from this instance's 
+            methods. Method arguments let one choose a subdirectory of this 
+            path, or override it altogether.
+
+            If the string passed to 'save_dir' has an empty pair of curly 
+            braces '{}', they will be replaced by the detector ID 
+            'self.detector'. For example, if self.detector == 'H100' and 
+            save_dir == 'figures/{}/pixels', then the directory that 
+            'save_path' points to is 'figures/H100/pixels'.
+            (default: '')
+
         count_map: 2D numpy.ndarray
             A 32 x 32 array of floats. Each entry represents the number of
             counts read by the detector pixel at the corresponding index.
@@ -820,7 +941,8 @@ class GammaFlood(Experiment):
             to the value stored in self.spectrum.
             (initialized to None)
     '''
-    def __init__(self, filepath, detector, source, voltage, temp, etc=''):
+    def __init__(self, filepath, detector, source, voltage, temp, 
+        save_dir='', etc=''):
         '''
         Initializes an instance of the 'GammaFlood' class.
 
@@ -839,7 +961,19 @@ class GammaFlood(Experiment):
             temp: str
                 Temperature of the detector in degrees Celsius
 
+
         Keyword Arguments:
+            save_dir: str
+                A default directory to save file outputs to from this 
+                instance's  methods. Method arguments let one choose a 
+                subdirectory of this path, or override it altogether.
+
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
             etc: str
                 Any other important information to include
         '''
@@ -855,9 +989,8 @@ class GammaFlood(Experiment):
         temp = str(temp)
 
         # Remove any unit symbols from voltage and temperature
-        numericize = str.maketrans('', '', string.ascii_letters)
-        voltage = voltage.translate(numericize)
-        temp = temp.translate(numericize)
+        voltage = voltage.translate(self.numericize)
+        temp = temp.translate(self.numericize)
 
         # Initialize data-based attributes to 'None'
         self.count_map = None
@@ -871,6 +1004,8 @@ class GammaFlood(Experiment):
         self.voltage = voltage
         self.temp = temp
         self.etc = etc
+
+        self._set_save_dir(save_dir)
 
 
     # Defining 'Line' instances for Am241 and Co57. Co57's 'chan_low' and 
@@ -915,7 +1050,7 @@ class GammaFlood(Experiment):
     # and 'get_spectrum'.
     #
 
-    def count_map(self, save=True, ext='.txt', save_dir=''):
+    def count_map(self, save=True, ext='.txt', save_dir='', sub_dir=''):
         '''
         Generates event count data for each pixel for raw gamma flood data.
 
@@ -924,13 +1059,19 @@ class GammaFlood(Experiment):
                 If True, saves count_map as an ascii file.
                 (default: True)
             save_dir: str
-                The directory to which the file will be saved. If left
-                unspecified, the file will be saved to the current directory.
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
                 If the string passed to 'save_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            sub_dir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -944,7 +1085,7 @@ class GammaFlood(Experiment):
         # Generating the save path, if needed.
         if save:
             save_path = self.construct_path(ext=ext, save_dir=save_dir, 
-                description='count_data')
+                description='count_data', sub_dir=sub_dir)
 
         # Get data from gamma flood FITS file
         with fits.open(self.filepath) as file:
@@ -993,8 +1134,8 @@ class GammaFlood(Experiment):
 
 
     def quick_gain(self, line=None, fit_low=100, fit_high=200, 
-        save_plot=True, plot_dir='', plot_ext='.pdf', 
-        save_data=True, data_dir='', data_ext='.txt'):
+        save_plot=True, plot_dir='', plot_sub='', plot_ext='.pdf', 
+        save_data=True, data_dir='', data_sub='', data_ext='.txt'):
         '''
         Generates gain correction data from the raw gamma flood event data.
         Currently, the fitting done might fail for sources other than Am241.
@@ -1016,13 +1157,19 @@ class GammaFlood(Experiment):
                 the figure.
                 (default: True)
             plot_dir: str
-                The directory to which the plot file will be saved. If left
-                unspecified, the file will be saved to the current directory.
-                If the string passed to 'save_dir' has an empty pair of curly 
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'plot_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                plot_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            plot_sub: str
+                A path to a sub-directory of 'plot_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'plot_dir'. 
                 (default: '')
             plot_ext: str
                 The file name extension for the plot file.
@@ -1031,13 +1178,19 @@ class GammaFlood(Experiment):
                 If True, saves gain data as a .txt file.
                 (default: True)
             data_dir: str
-                The directory to which the gain file will be saved. If left
-                unspecified, the file will be saved to the current directory.
-                If the string passed to 'save_dir' has an empty pair of curly 
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'data_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                data_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            data_sub: str
+                A path to a sub-directory of 'data_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'data_dir'. 
                 (default: '')
             data_ext: str
                 The file name extension for the gain file. 
@@ -1051,11 +1204,11 @@ class GammaFlood(Experiment):
 
         if save_data:
             data_path = self.construct_path(ext=data_ext, 
-                description='gain_data', save_dir=data_dir)
+                description='gain_data', save_dir=data_dir, sub_dir=data_sub)
 
         if save_plot:
             plot_path = self.construct_path(description='gain', ext=plot_ext, 
-                save_dir=plot_dir)
+                save_dir=plot_dir, sub_dir=plot_sub)
 
         # If no line is passed, take it from the GammaFlood instance.
         if line == None:
@@ -1178,7 +1331,8 @@ class GammaFlood(Experiment):
 
 
     def get_spectrum(self, gain=None, line=None, bins=10000, 
-        energy_range=(0.01, 120), save=True, ext='.txt', save_dir=''):
+        energy_range=(0.01, 120), save=True, ext='.txt', 
+        save_dir='', sub_dir=''):
         '''
         Applies gain correction to get energy data, and then bins the events
         by energy to obtain a spectrum.
@@ -1201,13 +1355,19 @@ class GammaFlood(Experiment):
                 If True, 'spectrum' will be saved as an ascii file. Parameters 
                 relevant to this saving are below
             save_dir: str
-                The directory to which the  file will be saved. If left
-                unspecified, the file will be saved to the current directory.
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
                 If the string passed to 'save_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            sub_dir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -1224,7 +1384,7 @@ class GammaFlood(Experiment):
         # Generating the save path, if needed.
         if save:
             save_path = self.construct_path(ext=ext, save_dir=save_dir, 
-                description='spectrum')
+                sub_dir=sub_dir, description='spectrum')
 
         # If no gain is passed, take it from the GammaFlood instance.
         if gain is None:
@@ -1306,7 +1466,7 @@ class GammaFlood(Experiment):
     #
 
     def plot_spectrum(self, spectrum=None, line=None, fit_low=80, fit_high=150,
-        title=None, save=True, ext='.pdf', save_dir=''):
+        title=None, save=True, ext='.pdf', save_dir='', sub_dir=''):
         '''
         Fits and plots the spectrum returned from 'get_spectrum'. To show the 
         plot with an interactive interface, call 'plt.show()' right after 
@@ -1340,13 +1500,19 @@ class GammaFlood(Experiment):
                 If True, 'spectrum' will be saved as an ascii file. Parameters 
                 relevant to this saving are below
             save_dir: str
-                The directory to which the  file will be saved. If left
-                unspecified, the file will be saved to the current directory.
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
                 If the string passed to 'save_dir' has an empty pair of curly 
                 braces '{}', they will be replaced by the detector ID 
                 'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the file is saved to
-                the directory 'figures/H100/pixels'.
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            sub_dir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
                 (default: '')
             ext: str
                 The file name extension for the count_map file. 
@@ -1356,7 +1522,7 @@ class GammaFlood(Experiment):
         # Constructing a save path, if needed
         if save:
             save_path = self.construct_path(ext=ext, save_dir=save_dir, 
-                description='energy_spectrum')
+                sub_dir=sub_dir, description='energy_spectrum')
 
         # If no spectrum is supplied take it from the instance.
         if spectrum is None:
