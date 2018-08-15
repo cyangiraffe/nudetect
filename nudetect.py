@@ -193,27 +193,35 @@ class Experiment:
 
         return save_path
 
-
-    def count_hist(self, count_map=None, bins=100, title=None, 
-        save=True, ext='.pdf', save_dir=''):
+    def pixel_hist(self, value_label, bins=70, hist_range=None, save=True, 
+        save_dir='', sub_dir='', ext='.pdf', text_pos='right'):
         '''
-        Plots a count histogram of 'count_map' data.
+        Plots a histogram of some value for each pixel
+
+        Arguments:
+            value_label: str
+                A short label denoting what data is supplied in 'values'.
+                This is used to determine various default values, like the 
+                attribute to pull data from, the title, and labels. Should be 
+                'Count' or 'FWHM' for best results.
 
         Keyword Arguments:
-            count_map: 2D numpy.ndarray
-                A 32 x 32 array of floats. Each entry represents the number of
-                counts read by the detector pixel at the corresponding index.
-                If None, then 'self.count_map' is used instead.
             bins: int
-                Number of bins for histogram.
-                (default: 100)
-            title: str
-                Figure title. If None, defaults to a title constructed by the 
-                'Experiment' class's 'title' method.
+                The number of bins in which to histogram the data. Passed 
+                directly to plt.hist.
+                (default: 50)
+            hist_range: tuple(number, number)
+                Indicated the range in which to bin data. Passed directly to
+                plt.hist. If None, it is set to (0, 4) for gain-corrected data
+                and to (0, 150) otherwise.
                 (default: None)
-            save:
-                If True, 'spectrum' will be saved as an ascii file. Parameters 
-                relevant to this saving are below
+            text_pos: str
+                Indicates where information about mean and standard deviation
+                appears on the plot. If 'right', appears in upper right. If 
+                'left', appears in upper left.
+                (default: 'right')
+            save: bool
+                If True, saves the plot to 'save_dir'.
             save_dir: str
                 The directory to which the file will be saved, overriding any
                 path specified in the 'save_dir' attribute. If an empty string,
@@ -230,27 +238,75 @@ class Experiment:
                 as in 'save_dir'. 
                 (default: '')
             ext: str
-                The file name extension for the count_map file. 
+                The file extension to the saved file.
                 (default: '.pdf')
         '''
-
-        # Generate a save path, if needed.
         if save:
-            save_path = self.construct_path(ext=ext, description='count_hist', 
+            description = (value_label.lower() + 'hist').replace(' ', '_')
+            save_path = self.construct_path(ext=ext, description=description, 
                 save_dir=save_dir)
 
-        if  count_map is None:
-            count_map = self.count_map
+        # Constructing the plot title, if none supplied
+        if title is None:
+            plot_type = f'{value_label} Histogram'
+            title = self.title(plot_type)
 
+        elif 'count' in value_label.lower():
+            if values is None: 
+                values = self.count_map.flatten()
+            xlabel = 'Counts'
+            text_units = ''
+            axis_units = ''
+            mean = int(round(np.mean(values), 0))
+            stdv = int(round(np.std(values), 0))
+            # Let's see what the None behavior is
+            # hist_range = (0, np.max(values) + 1)
+
+        elif 'fwhm' in value_label.lower():
+            if values is None: 
+                values = self._fwhm_map.flatten()
+
+            # Setting some plot parameters and converting units based on whether 
+            # the supplied data is gain-corrected.
+            if self._gain_corrected:
+                # if hist_range is None:
+                #     hist_range = (0, 4)
+                mean = int(round(np.mean(values) * 1000, 0))
+                stdv = int(round(np.std(values) * 1000, 0))
+                text_units = ' eV'
+                axis_units = ' (keV)'
+            else:
+                # if hist_range is None:
+                #     hist_range = (0, 150) # Not good?
+                mean = round(np.mean(values), 0)
+                stdv = round(np.std(values), 0)
+                text_units = ' channels'
+                axis_units = ' (channels)'
+
+        # Make the plot
         plt.figure()
-        plt.hist(np.array(count_map).flatten(), bins=bins, 
-            range=(0, np.max(count_map) + 1), 
-            histtype='stepfilled')
-        plt.ylabel('Pixels')
-        plt.xlabel('Counts')
-        plt.title(self.title('Count Histogram'))
-        plt.tight_layout()
+        ax = plt.axes() # need axes object for text positioning
+        fwhm = self._fwhm_map.flatten()
+        plt.hist(fwhm, bins=bins, range=hist_range, histtype='stepfilled')
 
+        # Setting text position based on user input. This will display the mean
+        # and standard deviation of the fwhm data.
+        if text_pos == 'right':
+            left_side = 0.5
+        elif text_pos == 'left':
+            left_side = 0.05
+        else:
+            raise ValueError("'text_pos' can be either 'right' or 'left'. "
+                + f"Instead {text_pos} was passed")
+
+        plt.text(left_side, 0.9, f'Mean = {mean}{text_units}', 
+            fontsize=14, transform=ax.transAxes)
+        plt.text(left_side, 0.8, f'1-Sigma = {stdv}{text_units}', 
+            fontsize=14, transform=ax.transAxes)
+
+        plt.xlabel(f'{xlabel}{axis_units}')
+        plt.ylabel('Pixels') 
+        plt.title(title)
         if save:
             plt.savefig(save_path)
 
@@ -793,99 +849,6 @@ class Noise(Experiment):
             np.savetxt(count_path, count_map)
 
         return fwhm_map, count_map
-
-
-    #
-    # Plotting method: 'fwhm_hist'
-    #
-
-    def fwhm_hist(self, bins=50, hist_range=None, save=True, save_dir='', 
-        sub_dir='', ext='.pdf', text_pos='right'):
-        '''
-        Plots a histogram of the fwhms for the noise of each pixel.
-
-        Keyword Arguments:
-            bins: int
-                The number of bins in which to histogram the data. Passed 
-                directly to plt.hist.
-                (default: 50)
-            hist_range: tuple(number, number)
-                Indicated the range in which to bin data. Passed directly to
-                plt.hist. If None, it is set to (0, 4) for gain-corrected data
-                and to (0, 150) otherwise.
-                (default: None)
-            text_pos: str
-                Indicates where information about mean and standard deviation
-                appears on the plot. If 'right', appears in upper right. If 
-                'left', appears in upper left.
-                (default: 'right')
-            save: bool
-                If True, saves the plot to 'save_dir'.
-            save_dir: str
-                The directory to which the file will be saved, overriding any
-                path specified in the 'save_dir' attribute. If an empty string,
-                will default to the attribute 'save_dir'.
-                If the string passed to 'save_dir' has an empty pair of curly 
-                braces '{}', they will be replaced by the detector ID 
-                'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the directory that 
-                'save_path' points to is 'figures/H100/pixels'.
-                (default: '')
-            sub_dir: str
-                A path to a sub-directory of 'save_dir' to which the file will
-                be saved. Empty curly braces '{}' are formatted the same way
-                as in 'save_dir'. 
-                (default: '')
-            ext: str
-                The file extension to the saved file.
-                (default: '.pdf')
-        '''
-        if save:
-            save_path = self.construct_path(description='fwhm_map',
-                save_dir=save_dir, sub_dir=sub_dir, ext=ext)
-
-        # Setting some plot parameters and converting units based on whether 
-        # the supplied data is gain-corrected.
-        if self._gain_corrected:
-            if hist_range is None:
-                hist_range = (0, 4)
-            mean_fwhm = str(int(round(np.mean(fwhm) * 1000, 0)))
-            stdv_fwhm = str(int(round(np.std(fwhm) * 1000, 0)))
-            fwhm_units = 'eV'
-            axis_units = 'keV'
-        else:
-            if hist_range is None:
-                hist_range = (0, 150)
-            mean_fwhm = str(round(np.mean(fwhm), 0))
-            stdv_fwhm = str(round(np.std(fwhm), 0))
-            fwhm_units = 'channels'
-            axis_units = 'channels'
-
-        # Make the plot
-        plt.figure()
-        ax = plt.axes() # need axes object for text positioning
-        fwhm = self._fwhm_map.flatten()
-        plt.hist(fwhm, bins=bins, range=hist_range, histtype='stepfilled')
-
-        # Setting text position based on user input. This will display the mean
-        # and standard deviation of the fwhm data.
-        if text_pos == 'right':
-            left_side = 0.5
-        elif text_pos == 'left':
-            left_side = 0.05
-        else:
-            raise ValueError("'text_pos' can be either 'right' or 'left'. "
-                + f"Instead {text_pos} was passed")
-
-        plt.text(left_side, 0.9, f'Mean = {mean_fwhm} {fwhm_units}', 
-            fontsize=14, transform=ax.transAxes)
-        plt.text(left_side, 0.8, f'1-Sigma = {stdv_fwhm} {fwhm_units}', 
-            fontsize=14, transform=ax.transAxes)
-
-        plt.xlabel(f'FWHM ({axis_units})')
-        plt.ylabel('Pixels') 
-        plt.title(self.title('FWHM Histogram'))
-        plt.savefig(save_path)
 
 
 class Leakage(Experiment):
