@@ -565,13 +565,13 @@ class Noise(Experiment):
         elif gain is None:
             gain = self.gain
 
-        # 'START' and 'END' denote the indices between which 'data['TEMP']'
+        # 'start' and 'end' denote the indices between which 'data['TEMP']'
         # takes on a resonable value and the detector position is the desired 
-        # position. START is the first index with a temperature greater than 
-        # -20 C, and END is the last such index.
+        # position. start is the first index with a temperature greater than 
+        # -20 C, and end is the last such index.
         mask = np.multiply((data['DET_ID'] == self.pos), (data['TEMP'] > -20))
-        START = np.argmax(mask)
-        END = len(mask) - np.argmax(mask[::-1])
+        start = np.argmax(mask)
+        end = len(mask) - np.argmax(mask[::-1])
         del mask
 
         maxchannel = 1000
@@ -583,9 +583,9 @@ class Noise(Experiment):
         chan_map = [[[] for col in range(33)] for row in range(33)]
         # Iterating through pixels
         for col in range(32):
-            RAWXmask = np.array(data['RAWX'][START:END]) == col
+            RAWXmask = np.array(data['RAWX'][start:end]) == col
             for row in range(32):
-                RAWYmask = np.array(data['RAWY'][START:END]) == row
+                RAWYmask = np.array(data['RAWY'][start:end]) == row
                 # Storing all readings for the current pixel in 'pulses'.
                 inds = np.nonzero(np.multiply(RAWXmask, RAWYmask))
                 pulses = data.field('PH_RAW')[inds]
@@ -880,11 +880,29 @@ class GammaFlood(Experiment):
     # and 'get_spectrum'.
     #
 
-    def count_map(self, save=True, ext='.txt', save_dir=''):
+    def count_map(self, mask_PH=True, mask_STIM=True, mask_sigma_below=None,
+        mask_sigma_above=None, save=True, ext='.txt', save_dir=''):
         '''
         Generates event count data for each pixel for raw gamma flood data.
 
         Keyword Arguments:
+            mask_PH: bool
+                If True, non-positive pulse heights will not be counted 
+                as counts.
+                (default: True)
+            mask_STIM: bool
+                If True, stimulated events will no be counted as counts.
+                (default: True)
+            mask_sigma_above: int or float
+                If a pixel has counts this many standard deviations above
+                the mean, it will be masked in the output. If None, no 
+                pixels will be masked on this basis.
+                (default: None)
+            mask_sigma_below: int or float
+                If a pixel has counts this many standard deviations below
+                the mean, it will be masked in the output. If None, no 
+                pixels will be masked on this basis.
+                (default: None)
             save: bool 
                 If True, saves count_map as an ascii file.
                 (default: True)
@@ -911,6 +929,21 @@ class GammaFlood(Experiment):
             save_path = self.construct_path(ext=ext, save_dir=save_dir, 
                 description='count_data')
 
+        # Type check the 'mask_sigma_above' and 'mask_sigma_below' arguments
+        # since they'll throw exceptions after the bulk of the computation time
+        if not (mask_sigma_below is None
+            or type(mask_sigma_below) == int
+            or type(mask_sigma_below) == float):
+            raise TypeError("'mask_sigma_below' must be 'int' or 'float'. A "
+                + f"value of type {type(mask_sigma_below)} was passed.")
+
+        if not (mask_sigma_above is None
+            or type(mask_sigma_above) == int
+            or type(mask_sigma_above) == float):
+            raise TypeError("'mask_sigma_above' must be 'int' or 'float'. A "
+                + f"value of type {type(mask_sigma_above)} was passed.")
+
+
         # Get data from gamma flood FITS file
         with fits.open(self.filepath) as file:
             data = file[1].data
@@ -920,18 +953,25 @@ class GammaFlood(Experiment):
         # otherwise. Note that this is the reverse of numpy's convention for 
         # masking arrays.
 
-        # 'START' and 'END' denote the indices between which 'data['TEMP']'
-        # takes on a resonable value. START is the first index with a 
-        # temperature greater than -20 C, and END is the last such index.
+        # 'start' and 'end' denote the indices between which 'data['TEMP']'
+        # takes on a resonable value. start is the first index with a 
+        # temperature greater than -20 C, and end is the last such index.
         mask = data['TEMP'] > -20
-        START = np.argmax(mask)
-        END = len(mask) - np.argmax(mask[::-1])
+        start = np.argmax(mask)
+        end = len(mask) - np.argmax(mask[::-1])
         del mask
 
+        # Initializing some mask arrays
+        mask_size = data['PH'][start:end]
+        PHmask = np.ones(mask_size)
+        STIMmask = np.ones(mask_size)
+
         # Masking out non-positive pulse heights
-        PHmask = 0 < np.array(data['PH'][START:END])
+        if mask_PH:
+            PHmask = 0 < np.array(data['PH'][start:end])
         # Masking out artificially stimulated events
-        STIMmask = np.array(data['STIM'][START:END]) == 0
+        if mask_STIM:
+            STIMmask = np.array(data['STIM'][start:end]) == 0
         # Combining the above masks
         TOTmask = np.multiply(PHmask, STIMmask)
 
@@ -939,11 +979,27 @@ class GammaFlood(Experiment):
         count_map = np.zeros((32, 32))
 
         for i in range(32):
-            RAWXmask = np.array(data['RAWX'][START:END]) == i
+            RAWXmask = np.array(data['RAWX'][start:end]) == i
             for j in range(32):
-                RAWYmask = np.array(data['RAWY'][START:END]) == j
+                RAWYmask = np.array(data['RAWY'][start:end]) == j
                 count_map[i, j] = np.sum(np.multiply(
                     TOTmask, np.multiply(RAWXmask, RAWYmask)))
+
+        # Masking pixels that were turned off, before calculating
+        # the rest of the masks (otherwise they'll skew mean and stddev)
+        count_map = np.ma.masked_values(count_map, 0.0)
+
+        # Masking pixels whose counts are too many standard deviations
+        # away from mean.
+        if mask_sigma_above is not None:
+            mask_value = np.mean(count_map)\
+                + (np.std(count_map) * mask_sigma_above)
+            count_map = np.ma.masked_greater(count_map, mask_value)
+
+        if mask_sigma_below is not None:
+            mask_value_below = np.mean(count_map)\
+                - (np.std(count_map) * mask_sigma_below)
+            count_map = np.ma.masked_less(count_map, mask_value)
 
         # Saves the 'count_map' array as an ascii file.
         if save:
@@ -1029,8 +1085,8 @@ class GammaFlood(Experiment):
             data = file[1].data
 
         mask = data['TEMP'] > -20
-        START = np.argmax(mask)
-        END = len(mask) - np.argmax(mask[::-1])
+        start = np.argmax(mask)
+        end = len(mask) - np.argmax(mask[::-1])
         del mask
 
         maxchannel = 10000
@@ -1039,12 +1095,12 @@ class GammaFlood(Experiment):
 
         # Iterating through pixels
         for x in range(32):
-            RAWXmask = data.field('RAWX')[START:END] == x
+            RAWXmask = data.field('RAWX')[start:end] == x
             for y in range(32):
-                RAWYmask = data.field('RAWY')[START:END] == y
+                RAWYmask = data.field('RAWY')[start:end] == y
                 # Getting peak height in 'channels' for all events for the 
                 # current pixel.
-                channel = data.field('PH')[START:END][np.nonzero(
+                channel = data.field('PH')[start:end][np.nonzero(
                     np.multiply(RAWXmask, RAWYmask))]
 
                 # If there were events at this pixel, fit the strongest peak
@@ -1205,12 +1261,12 @@ class GammaFlood(Experiment):
         with fits.open(self.filepath) as file:
             data = file[1].data
 
-        # 'START' and 'END' denote the indices between which 'data['TEMP']'
-        # takes on a resonable value. START is the first index with a 
-        # temperature greater than -20 C, and END is the last such index.
+        # 'start' and 'end' denote the indices between which 'data['TEMP']'
+        # takes on a resonable value. start is the first index with a 
+        # temperature greater than -20 C, and end is the last such index.
         temp_mask = data['TEMP'] > -20
-        START = np.argmax(temp_mask)
-        END = len(temp_mask) - np.argmax(temp_mask[::-1])
+        start = np.argmax(temp_mask)
+        end = len(temp_mask) - np.argmax(temp_mask[::-1])
         del temp_mask
 
         # PH_COM is a list of length 9 corresponding to the charge in pixels 
