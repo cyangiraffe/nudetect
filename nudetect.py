@@ -193,8 +193,9 @@ class Experiment:
 
         return save_path
 
-    def pixel_hist(self, value_label, bins=70, hist_range=None, save=True, 
-        save_dir='', sub_dir='', ext='.pdf', text_pos='right'):
+    def pixel_hist(self, value_label, values=None, bins=70, hist_range=None,  
+        title=None, text_pos='right', save=True, save_dir='', sub_dir='', 
+        ext='.pdf'):
         '''
         Plots a histogram of some value for each pixel
 
@@ -251,7 +252,7 @@ class Experiment:
             plot_type = f'{value_label} Histogram'
             title = self.title(plot_type)
 
-        elif 'count' in value_label.lower():
+        if 'count' in value_label.lower():
             if values is None: 
                 values = self.count_map.flatten()
             xlabel = 'Counts'
@@ -286,8 +287,7 @@ class Experiment:
         # Make the plot
         plt.figure()
         ax = plt.axes() # need axes object for text positioning
-        fwhm = self._fwhm_map.flatten()
-        plt.hist(fwhm, bins=bins, range=hist_range, histtype='stepfilled')
+        plt.hist(values, bins=bins, range=hist_range, histtype='stepfilled')
 
         # Setting text position based on user input. This will display the mean
         # and standard deviation of the fwhm data.
@@ -397,7 +397,7 @@ class Experiment:
         current_cmap = mpl.cm.get_cmap('inferno')
         current_cmap.set_bad(color='gray')
         # The 'extent' kwarg is necessary to make axes flush to the image.
-        plt.imshow(masked, vmin=vmin, vmax=vmax, extent=(0, 32, 0 , 32),
+        plt.imshow(values, vmin=vmin, vmax=vmax, extent=(0, 32, 0 , 32),
             cmap=current_cmap)
         c = plt.colorbar()
         c.set_label(cb_label, labelpad=10)
