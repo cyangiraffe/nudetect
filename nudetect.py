@@ -479,7 +479,7 @@ class Noise(Experiment):
     # Heavy lifting data analysis method: 'noise_map'
     #
 
-    def noise_map(self, gain=None, save_plot=True, plot_dir='',
+    def gen_noise_map(self, gain=None, save_plot=True, plot_dir='',
         plot_ext='.pdf', save_data=True, data_dir='', data_ext='.txt'):
         '''
         Calculates the noise FWHM for each pixel and generates a noise count
@@ -880,8 +880,9 @@ class GammaFlood(Experiment):
     # and 'get_spectrum'.
     #
 
-    def count_map(self, mask_PH=True, mask_STIM=True, mask_sigma_below=None,
-        mask_sigma_above=None, save=True, ext='.txt', save_dir=''):
+    def gen_count_map(self, mask_PH=True, mask_STIM=True, 
+        mask_sigma_below=None,mask_sigma_above=None, 
+        save=True, ext='.txt', save_dir=''):
         '''
         Generates event count data for each pixel for raw gamma flood data.
 
@@ -962,7 +963,7 @@ class GammaFlood(Experiment):
         del mask
 
         # Initializing some mask arrays
-        mask_size = data['PH'][start:end]
+        mask_size = data['PH'][start:end].shape
         PHmask = np.ones(mask_size)
         STIMmask = np.ones(mask_size)
 
@@ -1011,7 +1012,7 @@ class GammaFlood(Experiment):
         return count_map
 
 
-    def quick_gain(self, line=None, fit_low=100, fit_high=200, 
+    def gen_gain_map(self, line=None, fit_low=100, fit_high=200, 
         save_plot=True, plot_dir='', plot_ext='.pdf', 
         save_data=True, data_dir='', data_ext='.txt'):
         '''
@@ -1195,7 +1196,7 @@ class GammaFlood(Experiment):
         return gain
 
 
-    def get_spectrum(self, gain=None, line=None, bins=10000, 
+    def gen_spectrum(self, gain=None, line=None, bins=10000, 
         energy_range=(0.01, 120), save=True, ext='.txt', save_dir=''):
         '''
         Applies gain correction to get energy data, and then bins the events
@@ -1467,13 +1468,13 @@ if __name__ == '__main__':
 
         # Processing data
         print('Calculating count data...')
-        count_map = gamma.count_map(save_dir=save_dir)
+        count_map = gamma.gen_count_map(save_dir=save_dir)
 
         print('Calculating gain data...')
-        gain = gamma.quick_gain(plot_dir=pixel_dir, data_dir=save_dir)
+        gain = gamma.gen_gain_map(plot_dir=pixel_dir, data_dir=save_dir)
 
         print('Calculating the energy spectrum...')
-        gamma.get_spectrum(save_dir=save_dir)
+        gamma.gen_spectrum(save_dir=save_dir)
 
         # Plotting
         print('Plotting...')
@@ -1519,6 +1520,6 @@ if __name__ == '__main__':
 
         # Processing data
         print('Calculating fwhm and count data...')
-        noise.noise_map(data_dir=save_dir, plot_dir=pixel_dir)
+        noise.gen_noise_map(data_dir=save_dir, plot_dir=pixel_dir)
 
         print('Done!')
