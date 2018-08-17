@@ -99,12 +99,9 @@ class Experiment:
             if not os.path.exists(save_dir):
                 raise ValueError(f'The directory {save_dir} does not exist.')
 
-        if save_type is None:
-            self.save_dir = save_dir
-        elif save_type == 'data':
-            self.data_dir = save_dir
-        elif save_type == 'plot':
-            self.plot_dir == save_dir
+        if save_type is None:     self.save_dir = save_dir
+        elif save_type == 'data': self.data_dir = save_dir
+        elif save_type == 'plot': self.plot_dir = save_dir
 
 
     def construct_path(self, save_type=None, description='', ext='', 
@@ -157,19 +154,17 @@ class Experiment:
         if ext and ext[0] != '.':
             ext = f'.{ext}'
 
-
         # If no 'save_dir' argument was supplied, take instead the value in 
-        # the 'data_dir' or 'plot_dir' attributes, unless they also don't
-        # exist, in which case we look in the 'save_dir' attribute.
+        # the 'data_dir' or 'plot_dir' attributes, unless they also weren't 
+        # supplied values, in which case we look in the 'save_dir' attribute.
         if not save_dir:
-            try:
-                if save_type == 'data':
-                    save_dir = self.data_dir
-                elif save_type == 'plot':
-                    save_dir = self.plot_dir
-            except AttributeError:
-                save_dir = self.save_dir
+            if save_type == 'data':
+                save_dir = self.data_dir
+            elif save_type == 'plot':
+                save_dir = self.plot_dir
 
+        if not save_dir:
+            save_dir = self.save_dir
 
         # Append the subdirectory 'subdir' to the path, if specified.
         if subdir and save_dir:
@@ -218,9 +213,10 @@ class Experiment:
 
         return save_path
 
+
     def plot_pixel_hist(self, value_label, values=None, bins=70, 
-        hist_range=None,  title=None, text_pos='right', save=True, save_dir='',
-        subdir='',ext='.pdf'):
+        hist_range=None,  title=None, text_pos='right', save_plot=True,
+        plot_dir='', plot_subdir='', plot_ext='.pdf'):
         '''
         Plots a histogram of some value for each pixel
 
@@ -251,9 +247,9 @@ class Experiment:
                 appears on the plot. If 'right', appears in upper right. If 
                 'left', appears in upper left.
                 (default: 'right')
-            save: bool
+            save_plot: bool
                 If True, saves the plot to 'save_dir'.
-            save_dir: str
+            plot_dir: str
                 The directory to which the file will be saved, overriding any
                 path specified in the 'save_dir' attribute. If an empty string,
                 will default to the attribute 'save_dir'.
@@ -263,19 +259,19 @@ class Experiment:
                 save_dir == 'figures/{}/pixels', then the directory that 
                 'save_path' points to is 'figures/H100/pixels'.
                 (default: '')
-            subdir: str
+            plot_subdir: str
                 A path to a sub-directory of 'save_dir' to which the file will
                 be saved. Empty curly braces '{}' are formatted the same way
                 as in 'save_dir'. 
                 (default: '')
-            ext: str
+            plot_ext: str
                 The file extension to the saved file.
                 (default: '.pdf')
         '''
-        if save:
+        if save_plot:
             description = (value_label.lower() + 'hist').replace(' ', '_')
-            save_path = self.construct_path(ext=ext, description=description, 
-                save_dir=save_dir)
+            save_path = self.construct_path('plot', ext=plot_ext, 
+                description=description, save_dir=plot_dir, subdir=plot_subdir)
 
         # Constructing the plot title, if none supplied
         if title is None:
@@ -337,12 +333,13 @@ class Experiment:
         plt.xlabel(f'{xlabel}{axis_units}')
         plt.ylabel('Pixels') 
         plt.title(title)
-        if save:
+        if save_plot:
             plt.savefig(save_path)
 
 
     def plot_pixel_map(self, value_label, values=None, cb_label='', vmin=None, 
-        vmax=None, title=None, save=True, ext='.pdf', save_dir=''):
+        vmax=None, title=None, save_plot=True, plot_ext='.pdf', plot_dir='',
+        plot_subdir=''):
         '''
         Construct a heatmap of counts across the detector using matplotlib.
 
@@ -371,9 +368,9 @@ class Experiment:
                 'title' method. If an empty string is passed, no title
                 is shown.
                 (default: None)
-            save: bool
+            save_plot: bool
                 If True, saves the plot to a file.
-            save_dir: str
+            plot_dir: str
                 The directory to which the file will be saved, overriding any
                 path specified in the 'save_dir' attribute. If an empty string,
                 will default to the attribute 'save_dir'.
@@ -383,17 +380,17 @@ class Experiment:
                 save_dir == 'figures/{}/pixels', then the directory that 
                 'save_path' points to is 'figures/H100/pixels'.
                 (default: '')
-            subdir: str
+            plot_subdir: str
                 A path to a sub-directory of 'save_dir' to which the file will
                 be saved. Empty curly braces '{}' are formatted the same way
                 as in 'save_dir'. 
                 (default: '')
         '''
         # Generate a save path, if needed.
-        if save:
+        if save_plot:
             description = (value_label.lower() + '_map').replace(' ', '_')
-            save_path = self.construct_path(ext=ext, description=description, 
-                save_dir=save_dir)
+            save_path = self.construct_path('plot', ext=plot_ext, 
+                description=description, save_dir=plot_dir, subdir=plot_subdir)
 
         # Constructing the plot title, if none supplied
         if title is None:
@@ -439,7 +436,7 @@ class Experiment:
 
         plt.title(title)
 
-        if save:
+        if save_plot:
             plt.savefig(save_path)
 
 
@@ -772,14 +769,17 @@ class Noise(Experiment):
 
         # Generating the save paths, if needed.
         if save_data:
-            fwhm_path = self.construct_path(ext=data_ext, save_dir=data_dir, 
-                subdir=data_subdir, description='fwhm_data', etc=etc)
-            count_path = self.construct_path(ext=data_ext, save_dir=data_dir,
-                subdir=data_subdir, description='count_data', etc=etc)
+            fwhm_path = self.construct_path('data', ext=data_ext, 
+                save_dir=data_dir, subdir=data_subdir, description='fwhm_data',
+                etc=etc)
+            count_path = self.construct_path('data', ext=data_ext, 
+                save_dir=data_dir, subdir=data_subdir, 
+                description='count_data', etc=etc)
 
         if save_plot:
-            plot_path = self.construct_path(save_dir=plot_dir, etc=etc_plot,
-                subdir=plot_subdir, description='pix_spectrum', ext=plot_ext)
+            plot_path = self.construct_path('plot', save_dir=plot_dir, 
+                etc=etc_plot, subdir=plot_subdir, description='pix_spectrum', 
+                ext=plot_ext)
 
         # Get data from noise FITS file
         with fits.open(self.filepath) as file:
@@ -1105,9 +1105,10 @@ class GammaFlood(Experiment):
                 counts read by the detector pixel at the corresponding index.
         '''
         # Generating the save path, if needed.
-        if save:
-            save_path = self.construct_path(ext=data_ext, save_dir=data_dir, 
-                description='count_data', subdir=data_subdir)
+        if save_data:
+            save_path = self.construct_path('data', ext=data_ext, 
+                save_dir=data_dir, description='count_data', 
+                subdir=data_subdir)
 
         # Get data from gamma flood FITS file
         with fits.open(self.filepath) as file:
@@ -1144,7 +1145,7 @@ class GammaFlood(Experiment):
                     TOTmask, np.multiply(RAWXmask, RAWYmask)))
 
         # Saves the 'count_map' array as an ascii file.
-        if save:
+        if save_data:
             np.savetxt(save_path, count_map)
 
         count_map = np.ma.masked_values(count_map, 0.0)
@@ -1225,12 +1226,12 @@ class GammaFlood(Experiment):
         '''
 
         if save_data:
-            data_path = self.construct_path(ext=data_ext, 
+            data_path = self.construct_path('data', ext=data_ext, 
                 description='gain_data', save_dir=data_dir, subdir=data_subdir)
 
         if save_plot:
-            plot_path = self.construct_path(description='gain', ext=plot_ext, 
-                save_dir=plot_dir, subdir=plot_subdir)
+            plot_path = self.construct_path('plot', description='gain', 
+                ext=plot_ext,  save_dir=plot_dir, subdir=plot_subdir)
 
         # If no line is passed, take it from the GammaFlood instance.
         if line == None:
@@ -1405,8 +1406,8 @@ class GammaFlood(Experiment):
         '''
         # Generating the save path, if needed.
         if save_data:
-            save_path = self.construct_path(ext=data_ext, save_dir=data_dir, 
-                subdir=data_subdir, description='spectrum')
+            save_path = self.construct_path('data', ext=data_ext, 
+                save_dir=data_dir, subdir=data_subdir, description='spectrum')
 
         # If no gain is passed, take it from the GammaFlood instance.
         if gain is None:
@@ -1475,7 +1476,7 @@ class GammaFlood(Experiment):
         spectrum[0, :] = counts
         spectrum[1, :] = midpoints
 
-        if save:
+        if save_data:
             np.savetxt(save_path, spectrum)
 
         self.spectrum = spectrum
@@ -1545,8 +1546,9 @@ class GammaFlood(Experiment):
         '''
         # Constructing a save path, if needed
         if save_plot:
-            save_path = self.construct_path(ext=plot_ext, save_dir=plot_dir, 
-                subdir=plot_subdir, description='energy_spectrum')
+            save_path = self.construct_path('plot', ext=plot_ext, 
+                save_dir=plot_dir, subdir=plot_subdir, 
+                description='energy_spectrum')
 
         # If no spectrum is supplied take it from the instance.
         if spectrum is None:
@@ -1596,7 +1598,7 @@ class GammaFlood(Experiment):
 
         plt.title(title)
         plt.tight_layout()
-        if save:
+        if save_plot:
             plt.savefig(save_path)
 
 
@@ -1647,8 +1649,8 @@ if __name__ == '__main__':
 
         gamma.plot_spectrum()
         gamma.plot_pixel_hist('Count')
-        gamma.pixel_map('Count')
-        gamma.pixel_map('Gain')
+        gamma.plot_pixel_map('Count')
+        gamma.plot_pixel_map('Gain')
 
         print('Done!')
 
