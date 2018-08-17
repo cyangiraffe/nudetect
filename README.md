@@ -27,14 +27,15 @@ from nudetect import GammaFlood
 # experiment, and will be populated with analyzed data as we call its methods
 # for processing the raw gamma flood data.
 gamma = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
-					save_dir='outputs/{}', # default save directory for outputs
+					data_dir='data/{}', # default save directory for data
+					plot_dir='plots/{}', # default save directory for plots
 					detector='H100', # detector ID
 					source='Am241', # Used to fit peaks and get gain data
 					voltage=0, # in volts
 					temp=-10) # in degrees celsius
 
 # Note: The '{}' in 'save_dir' is automatically formatted to the detector ID.
-# In this case, save_dir == 'outputs/H100'
+# In this case, data_dir == 'data/H100'
 
 # At this point, we have some processed data attributes initialized, but not
 # contianing any data:
@@ -46,18 +47,19 @@ gamma = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
 # Processing data
 #
 
-# 'count_map' is a 32 x 32 array with count data for each pixel. It will store 
-# this output in an ascii file in the directory 'outputs/H100'.
-gamma.count_map()
+# Populates the attribute 'count_map', a 32 x 32 array with count data for 
+# each pixel. The method will store this output in an ascii file in the 
+# directory 'outputs/H100'.
+gamma.gen_count_map()
 
 # 'gain' is a 32 x 32 array with gain data for each pixel. Here, a spectrum 
 # plot is saved for each individual pixel in the directory 
 # 'outputs/H100/pixels', and the gain data saved to 'outputs/H100'.
-gamma.quick_gain(plot_sub='pixels')
+gamma.gen_quick_gain(plot_subdir='pixels')
 
 # 'spectrum' is a 2 x 10000 array representing the whole-detector spectrum.
 # This output is saved to 'outputs/H100'.
-gamma.get_spectrum()
+gamma.gen_spectrum()
 
 
 # Now, our processed data attributes have been populated with data:
@@ -76,12 +78,12 @@ gamma.get_spectrum()
 gamma.plot_spectrum()
 
 # Plots a histogram that bins pixels by their event counts.
-gamma.count_hist()
+gamma.plot_pixel_hist('Count')
 
 # Plots heatmaps of counts and gain for each pixel. Here, we specify what type
 # of data we want to plot, and the method figures out the rest.
-gamma.pixel_map('Count')
-gamma.pixel_map('Gain')
+gamma.plot_pixel_map('Count')
+gamma.plot_pixel_map('Gain')
 ```
 
 ## Developer Notes
