@@ -215,8 +215,8 @@ class Experiment:
 
 
     def plot_pixel_hist(self, value_label, values=None, bins=70, 
-        hist_range=None,  title=None, text_pos='right', save_plot=True,
-        plot_dir='', plot_subdir='', plot_ext='.pdf'):
+        hist_range=None,  title=None, text_pos='right', xlabel=None, 
+        save_plot=True, plot_dir='', plot_subdir='', plot_ext='.pdf'):
         '''
         Plots a histogram of some value for each pixel
 
@@ -281,7 +281,8 @@ class Experiment:
         if 'count' in value_label.lower():
             if values is None: 
                 values = self.count_map.flatten()
-            xlabel = 'Counts'
+            if xlabel is None:
+                xlabel = 'Counts'
             text_units = ''
             axis_units = ''
             mean = int(round(np.mean(values), 0))
@@ -290,6 +291,8 @@ class Experiment:
             # hist_range = (0, np.max(values) + 1)
 
         elif 'fwhm' in value_label.lower():
+            if xlabel is None:
+                xlabel = 'FWHM'
             if values is None: 
                 values = self._fwhm_map.flatten()
 
@@ -414,7 +417,7 @@ class Experiment:
             if not cb_label: 
                 cb_label = 'FWHM (keV)'
             if values is None: 
-                values = self.fwhm_map
+                values = self._fwhm_map
                 
         else: 
             if not cb_label: 
