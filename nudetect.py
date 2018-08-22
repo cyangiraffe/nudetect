@@ -1027,7 +1027,7 @@ class Leakage(Experiment):
         self._set_save_dir(data_dir, save_type='data')
 
     #
-    # Small helper method: 'title'.
+    # Small helper and wrapper methods: 'title' and 'slice_stats'
     #
 
     def title(self, plot, conditions=None):
@@ -1038,7 +1038,7 @@ class Leakage(Experiment):
         # Formatting the temperature and voltage conditions in the title,
         # if specified.
         if conditions is not None:
-            temp, voltage, mode = conditions
+            mode, temp, voltage = conditions
 
             temp = r'$' + str(temp) + r'^{\circ}$C'
             conditions = f'({temp}'
@@ -1056,8 +1056,50 @@ class Leakage(Experiment):
         return title
 
 
+    def slice_stats(self, mode, temp, voltage):
+        '''
+        A wrapper around the '.loc' method of pandas. This returns a 
+        row(s) of the pandas DataFrame stored in the 'stats' attribute
+        with the given mode, temperature, and voltage. If a single row,
+        its index in the original DataFrame can be accessed via its 
+        'name' attribute.
+
+        For more advanced indexing options, the the pandas documentation:
+            https://pandas.pydata.org/pandas-docs/stable/indexing.html
+        The section on 'Boolean Indexing' is particularly helpful.
+
+        Arguments:
+            mode: str
+                Can be 'CP' or 'N'. Indicates whether the desired measurement
+                was done in charge-pump or normal mode.
+            temp: int
+                The temperature in degrees Celsius at which the desired 
+                measurement was done.
+            voltage: int
+                The bias voltage in Volts at which the desired measurement
+                was done.
+
+        Return:
+            trial: pandas.Series or pandas.DataFrame
+        '''
+        # Formatting inputs
+        mode = mode.upper()
+        temp = int(temp)
+        voltage = int(voltage)
+
+        # Aliasing the attribute
+        df = self.stats
+
+        # Generating a boolean DataFrame
+        bool_df = (df.loc['mode'] == mode) & \
+                  (df.loc['temp'] == temp) & \
+                  (df.loc['voltage'] == voltage)
+
+        return df.loc[bool_df]
+
+
     #
-    # Heavy-lifting data analysis method: 'gen_leakage_stats'
+    # Heavy-lifting data analysis method: 'gen_data'
     #
 
     def gen_data(self, save_data=True, data_dir='', data_subdir='', 
@@ -1065,6 +1107,11 @@ class Leakage(Experiment):
         plot_ext='.pdf'):
         '''
         For each combination of mode (charge-pump or normal), voltage, and temperature, formats leakage current data into 32 x 32 pixel maps and calculates mean, standard deviation, and number of outliers.
+
+        The indices in the 'stats' pandas.DataFrame and the 'leak_maps' 3D
+        numpy.ndarray correspond to each other. I.e., stats[i] contains the
+        mean, stddev, outliers, and experimental conditions for the leakage
+        map in leak_maps[i].
 
         Keyword Arguments:
             save_plot: bool
@@ -1108,29 +1155,31 @@ class Leakage(Experiment):
                 as in 'data_dir'. 
                 (default: '')
             data_ext: str
-                The file name extension for the gain file. 
-                (default: '.txt')
+                The file name extension for the file containing the 'stats'
+                return value. The file will be a CSV no matter the extension.
+                The 'leak_maps' return file is also saved to a numpy binary
+                file, so its extension cannot be changed.
+                (default: '.csv')
 
-        Return: tuple(numpy.ndarray, numpy.ndarray)
-            leakage_stats: pandas.DataFrame
+        Return: Tuple(pandas.DataFrame, numpy.ndarray)
+            stats: pandas.DataFrame
                 A data frame with 1 row for each combination of parameters. The
-                columns are as follows: 
+                columns are described as follows: 
                     'mode'    : Can be 'CP' or 'N' (charge-pump or normal)
-                    'voltage' : The bias voltage in volts
+                    'voltage' : The bias voltage in Volts
                     'temp'    : The temperature in Celsius
                     'mean'    : The mean leakage current across the pixels
                     'stddev'  : The corresponding standard deviation
                     'outliers': Number of outlier pixels
-                    'map idx' : Index of resp. leakage map in 'leak_maps'
-            leakage_maps: 3D numpy.ndarray
+            leak_maps: 3D numpy.ndarray
                 An array of shape (n, 32, 32), where 'n' is the value held by
                 the 'num_trials' attribute, which indicates the number of 
                 combinations of mode, voltage, and temperature. Slicing like
-                'leakage_maps[n]' gives a 32 x 32 pixel map of leakage current.
+                'leak_maps[n]' gives a 32 x 32 pixel map of leakage current.
         '''
         # Generating a save path, if necessary
         if save_data:
-            stat_path = self.construct_path(description='leak_stats', 
+            stats_path = self.construct_path(description='leak_stats', 
                 ext=data_ext, save_dir=data_dir, subdir=data_subdir)
             maps_path = self.construct_path(description='leak_maps',
                 ext='.npy', save_dir=data_dir, subdir=data_subdir)
@@ -1138,22 +1187,22 @@ class Leakage(Experiment):
             hist_path = self.construct_path(description='leak_hist',
                 ext=plot_ext, save_dir=plot_dir, subdir=plot_subdir)
 
-        self.leakage_stats = pd.DataFrame(np.zeros((self._num_trials, 6)),
+        self.stats = pd.DataFrame(np.zeros((self._num_trials, 6)),
             columns=['mode', 'temp', 'voltage', 'mean', 'stddev', 'outliers'])
 
         # This array will store leakage maps for each combination of 
         # mode, voltage, and temperature.
-        self.leakage_maps = np.empty(self.num_trials, 32, 32)
+        self.leak_maps = np.empty(self.num_trials, 32, 32)
 
         # Sets 'filename' to the last directory in 'self.datapath'.
         filename = os.path.basename(self.datapath)
 
         # 'start' and 'end' define the indices of the pixels at the given 
         # detector position are.
-        self._start = -1024 * (1 + self.pos)
-        self._end = start + 1024
+        start = -1024 * (1 + self.pos)
+        end = start + 1024
 
-        self._idx = 0 # for populating 'leakage_maps' and 'leakage_stats'.
+        idx = 0 # for populating 'leak_maps' and 'stats'.
 
         # Iterate through temperatures
         for temp in self.temps:
@@ -1168,149 +1217,93 @@ class Leakage(Experiment):
                 # Pixel coordinates in charge pump mode
                 cp_col = cp_data.field('col4')[pix]
                 cp_row = cp_data.field('col5')[pix]
+
                 # Pixel coordinates in normal mode
                 n_col = n_data.field('col4')[pix]
                 n_row = n_data.field('col5')[pix]
+
                 # Leakage at this pixel in each mode.
                 cp_zero[cp_row, cp_col] = cp_data.field('col6')[pix]
                 n_zero[n_row, n_col] = n_data.field('col6')[pix]
 
             # Iterating though non-zero bias voltages
             for voltage in self.all_voltages:
-                # If we tested this voltage using charge-pump mode,
-                # construct a map of the leakage current appropriately.
+                # 'modes' keep record of with which mode the current voltage
+                # was tested.
+                modes = []
                 if voltage in self.cp_voltages:
-                    # Read in the data file for the current voltage and 
-                    # temperature in CP mode.
-                    self._data = asciio.read(
-                        f'{self.datapath}/{filename}_{temp}.C{voltage}V.txt')
-                    # Process raw data
-                    leak_map = self._process_data('CP', temp, voltage)
-                    # Plot leakage current map
-                    self.plot_pixel_map('Leakage', leak_map, plot_dir=plot_dir,
-                        plot_subdir=plot_subdir, plot_ext=plot_ext)
-                    # Plot leakage current histogram
-                    self.plot_pixel_hist('Leakage', leak_map,
-                        plot_dir=plot_dir, plot_subdir=plot_subdir,
-                        plot_ext=plot_ext)
-                           
-                # If we tested this voltage using normal mode,
-                # construct a map of the leakage current appropriately.
+                    modes.append('CP')
                 if voltage in self.n_voltages:
+                    modes.append('N')
+
+                for mode in modes:
+                    leak_map = np.zeros((32, 32))
+
+                    # Set a conversion constant between raw readout and 
+                    # current in pA based on the mode. 
+                    if mode == 'CP':
+                        const = 1.7e3 / 3000
+                    elif mode == 'N':
+                        const = 1.7e3 / 150
+
                     # Read in the data file for the current voltage and 
                     # temperature in CP mode.
-                    self._data = asciio.read(
-                        f'{self.datapath}/{filename}_{temp}.N{voltage}V.txt')
-                    # Process raw data
-                    leak_map = self._process_data('N', temp, voltage)
-                    # Plot leakage current map
-                    self.plot_pixel_map('Leakage', leak_map, plot_dir=plot_dir,
-                        plot_subdir=plot_subdir, plot_ext=plot_ext)
-                    # Plot leakage current histogram
+                    data = asciio.read(f'{self.datapath}/{filename}_'
+                        + f'{temp}.{mode[0]}{voltage}V.txt')
+
+                    # Generating a leakage current map at the current voltage,
+                    # realtive to what we had at 0V.
+                    for pix in range(start, end): # iterating through pixels
+                        col = data.field('col4')[pix]
+                        row = data.field('col5')[pix]
+                        leak_map[row, col] = (data.field('col6')[pix] 
+                            - cp_zero[row, col]) * const
+
+                    del data
+
+                    leak_map = np.ma.masked_where(leak_map > 100, leak_map)
+
+                    mean = np.mean(leak_map)
+                    stddev = np.std(leak_map)
+                    # 'outliers' in the number of pixels whose leakage 
+                    # currents are 5 standard deviations from the mean.
+                    outliers = np.sum(np.absolute(
+                        leak_map - mean)) > 5 * stddev
+
+                    # Record the data
+
+                    # Populate a row of the stats DataFrame with the
+                    # corresponding parameters and measurements for this trial
+                    row = [mode, temp, voltage, mean, stddev, outliers]
+                    self.stats.loc[idx] = row
+                    # Populate a layer of the leak_maps array with the leakage 
+                    # leakage current map for the same parameters at the same 
+                    # index as above.
+                    self.leak_maps[idx] = leak_map
+
+                    idx += 1
+
+                    # Plotting
+                    self.plot_pixel_map('Leakage', leak_map,
+                        conditions=(mode, temp, voltage), plot_dir=plot_dir,
+                        plot_subdir=plot_subdir, plot_ext=plot_ext, 
+                        save_plot=save_plot)
+
                     self.plot_pixel_hist('Leakage', leak_map,
-                        plot_dir=plot_dir, plot_subdir=plot_subdir,
-                        plot_ext=plot_ext)
+                        conditions=(mode, temp, voltage), plot_dir=plot_dir, 
+                        plot_subdir=plot_subdir, plot_ext=plot_ext,
+                        save_plot=save_plot)
 
-        # Converting to a pandas DataFrame so that we can save nicely and 
-        # use those good good DataFrame slicing methods.
-        self.leakage_stats = pd.DataFrame(self._table)
-
-        # Deleting temporary private attributes.
-        del self._start, self._end, self._data, self._idx
-
+        # Saving data
         if save_data:
             # Leakage statistics go to a CSV file
-            self.leakage_stats.to_csv(stat_path)
+            self.stats.to_csv(stats_path)
             # The amalgam of leakage maps go to a .npy file (numpy binary file
             # - can't do ascii b/c its a 3D array).
-            np.save(maps_path, self.leakage_maps)
+            np.save(maps_path, self.leak_maps)
 
-        return self.leakage_stats, self.leakage_maps
+        return self.stats, self.leak_maps
 
-
-    def _process_data(self, mode, temp, voltage):
-        '''
-        Helper function for 'leakage'. Parameters that correspond
-        to columns of the table generated are passed to this function
-        as arguments. Other parameters are passed using temporary private
-        attributes of this instance generated in the 'leakage' method.
-        '''
-        leak_map = np.zeros((32, 32))
-
-        # Set a conversion constant between raw readout and current in pA
-        # based on the mode in which the data was taken. 
-        if mode == 'CP':
-            const = 1.7e3 / 3000
-        elif mode == 'N':
-            const = 1.7e3 / 150
-
-        # Generating a leakage current map at the current voltage,
-        # realtive to what we had at 0V.
-        for pix in range(self._start, self._end): # iterating through pixels
-            col = self._data.field('col4')[pix]
-            row = self._data.field('col5')[pix]
-            leak_map[row, col] = (data.field('col6')[pix] 
-                - cp_zero[row, col]) * const
-
-        masked_map = np.ma.masked_where(leak_map > 100, leak_map)
-
-        mean = np.mean(leak_map)
-        stddev = np.std(leak_map)
-        # 'outliers' in the number of pixels whose leakage 
-        # currents are 5 standard deviations from the mean.
-        outliers = np.sum(np.absolute(leak_map - mean)) > 5 * stddev
-
-        # Record the data
-
-        # Populate a row of the leakage_stats DataFrame with the
-        # corresponding parameters and measurements for this trial
-        row = [mode, temp, voltage, mean, stddev, outliers]
-        self.leakage_stats.loc[self._idx] = row
-        # Populate a layer of the leakage_maps array with the leakage
-        # current map for the same parameters at the same index as above.
-        self.leakage_maps[self._idx] = masked_map
-
-        return masked_map
-
-
-    def slice_stats(self, mode, temp, voltage):
-        '''
-        A wrapper around the '.loc' method of pandas. This returns a 
-        row(s) of the pandas DataFrame stored in the 'leakage_stats' attribute
-        with the given mode, temperature, and voltage. 
-
-        For more advanced indexing options, the the pandas documentation:
-            https://pandas.pydata.org/pandas-docs/stable/indexing.html
-        The section on 'Boolean Indexing' is particularly helpful.
-
-        Arguments:
-            mode: str
-                Can be 'CP' or 'N'. Indicates whether the desired measurement
-                was done in charge-pump or normal mode.
-            temp: int
-                The temperature in degrees Celsius at which the desired 
-                measurement was done.
-            voltage: int
-                The bias voltage in Volts at which the desired measurement
-                was done.
-
-        Return:
-            trial: pandas.Series or pandas.DataFrame
-        '''
-        # Formatting inputs
-        mode = mode.upper()
-        temp = int(temp)
-        voltage = int(voltage)
-
-        # Aliasing the attribute
-        df = self.leakage_stats
-
-        # Generating a boolean DataFrame
-        bool_df = (df.loc['mode'] == mode) & \
-                  (df.loc['temp'] == temp) & \
-                  (df.loc['voltage'] == voltage)
-
-        return df.loc[bool_df]
 
 
 
