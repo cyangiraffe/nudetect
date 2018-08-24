@@ -27,7 +27,7 @@ from nudetect import GammaFlood
 # Here, we initialize a 'GammaFlood' object. This stores information about the 
 # experiment, and will be populated with analyzed data as we call its methods
 # for processing the raw gamma flood data.
-gamma = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
+gamma = GammaFlood('raw_data/20170315_H100_Am241_-10C_400V.fits', # raw data
 					data_dir='data/{}', # default save directory for data
 					plot_dir='plots/{}', # default save directory for plots
 					detector='H100', # detector ID
