@@ -1654,11 +1654,53 @@ class Leakage(Experiment):
             plot_ext=plot_ext, etc=etc, **kwargs)
 
 
-    def plot_line(self, xval, yval, mode='CP'):
+    def plot_line_current(self, title=None, mode='CP', save_plot=True, 
+        plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
         '''
         Plots a line graph of 'xval' on the x axis and 'yval' on the y axis,
         '''
-        pass
+        if save_plot:
+            description = 'leakage_voltage_line'
+            save_path = self.construct_path('plot', ext=plot_ext, 
+                description=description, save_dir=plot_dir, subdir=plot_subdir,
+                etc=etc)
+
+        stats = self.stats
+
+        for temp in self.temps:
+            bool_df = (stats.loc['mode'] == mode) & (stats.loc['temp'] == temp)
+            rows = stats.loc[bool_df]
+            temp_label = r'$T = {}^\circ C$'.format(temp)
+            plt.errorbar(rows['voltage'], rows['mean'], yerr=rows['stddev'],
+                label=temp_label)
+
+        plt.legend()
+        plt.xlabel('Bias Voltage (V)')
+        plt.ylabel('Mean Leakage Current (pA)')
+
+
+    def plot_line_outliers(self, title=None, mode='CP', save_plot=True, 
+        plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
+        '''
+        Plots a line graph of 'xval' on the x axis and 'yval' on the y axis,
+        '''
+        if save_plot:
+            description = 'outliers_voltage_line'
+            save_path = self.construct_path('plot', ext=plot_ext, 
+                description=description, save_dir=plot_dir, subdir=plot_subdir,
+                etc=etc)
+
+        stats = self.stats
+
+        for temp in self.temps:
+            bool_df = (stats.loc['mode'] == mode) & (stats.loc['temp'] == temp)
+            rows = stats.loc[bool_df]
+            temp_label = r'$T = {}^\circ C$'.format(temp)
+            plt.plot(rows['voltage'], rows['outliers'], label=temp_label)
+
+        plt.legend()
+        plt.xlabel('Bias Voltage (V)')
+        plt.ylabel(r'Number of Outlier Pixels ($> 5 \sigma$)')
 
 
 class GammaFlood(Experiment):
