@@ -1249,12 +1249,12 @@ class Leakage(Experiment):
             hist_path = self.construct_path(description='leak_hist',
                 ext=plot_ext, save_dir=plot_dir, subdir=plot_subdir)
 
-        self.stats = pd.DataFrame(np.zeros((self._num_trials, 6)),
+        self.stats = pd.DataFrame(np.zeros((self.num_trials, 6)),
             columns=['mode', 'temp', 'voltage', 'mean', 'stddev', 'outliers'])
 
         # This array will store leakage maps for each combination of 
         # mode, voltage, and temperature.
-        self.leak_maps = np.empty(self.num_trials, 32, 32)
+        self.leak_maps = np.empty((self.num_trials, 32, 32))
 
         # Sets 'filename' to the last directory in 'self.datapath'.
         filename = os.path.basename(self.datapath)
@@ -1270,7 +1270,8 @@ class Leakage(Experiment):
         for temp in self.temps:
             # First, construct maps 'cp_zero' and 'n_zero' of the leakage 
             # current at bias voltage of zero as a control.
-            zero_leak = {'CP': np.empty((32, 32)), 'N': np.empty((32, 32))}
+            n_zero = np.empty((32, 32))
+            cp_zero = np.empty((32, 32))
 
             cp_zero_data = asciio.read(
                 f'{self.datapath}/{filename}_{temp}C.C0V.txt')
@@ -1287,8 +1288,8 @@ class Leakage(Experiment):
                 n_row = n_zero_data.field('col5')[pix]
 
                 # Leakage at this pixel in each mode.
-                cp_zero[cp_row, cp_col] = cp_data.field('col6')[pix]
-                n_zero[n_row, n_col] = n_data.field('col6')[pix]
+                cp_zero[cp_row, cp_col] = cp_zero_data.field('col6')[pix]
+                n_zero[n_row, n_col] = n_zero_data.field('col6')[pix]
 
             # Iterating though non-zero bias voltages
             for voltage in self.all_voltages:
@@ -1570,6 +1571,7 @@ class Leakage(Experiment):
             temp = row.at['temp']
             voltage = row.at['voltage']
 
+            leak_map = self.leak_maps[i]
             conditions = (mode, temp, voltage)
             etc = f'{mode}_{temp}C_{voltage}V'
 
@@ -1580,6 +1582,8 @@ class Leakage(Experiment):
                 cb_label=cb_label, vmin=vmin, vmax=vmax, title=title, 
                 save_plot=save_plot, plot_ext=plot_ext, plot_dir=plot_dir, 
                 plot_subdir=plot_subdir, etc=etc)
+
+            plt.close()
 
 
     def plot_all_hists(self, bins=70, hist_range=None, title='', 
@@ -1642,6 +1646,7 @@ class Leakage(Experiment):
             temp = row.at['temp']
             voltage = row.at['voltage']
 
+            leak_map = self.leak_maps[i]
             conditions = (mode, temp, voltage)
             etc = f'{mode}_{temp}C_{voltage}V'
 
@@ -1652,6 +1657,8 @@ class Leakage(Experiment):
             hist_range=hist_range, title=title, text_pos=text_pos, 
             save_plot=True, plot_dir=plot_dir, plot_subdir=plot_subdir, 
             plot_ext=plot_ext, etc=etc, **kwargs)
+
+        plt.close()
 
 
     def plot_line_current(self, title=None, mode='CP', save_plot=True, 
@@ -1668,7 +1675,7 @@ class Leakage(Experiment):
         stats = self.stats
 
         for temp in self.temps:
-            bool_df = (stats.loc['mode'] == mode) & (stats.loc['temp'] == temp)
+            bool_df = (stats.loc[:, 'mode'] == mode) & (stats.loc[:, 'temp'] == temp)
             rows = stats.loc[bool_df]
             temp_label = r'$T = {}^\circ C$'.format(temp)
             plt.errorbar(rows['voltage'], rows['mean'], yerr=rows['stddev'],
@@ -1693,7 +1700,7 @@ class Leakage(Experiment):
         stats = self.stats
 
         for temp in self.temps:
-            bool_df = (stats.loc['mode'] == mode) & (stats.loc['temp'] == temp)
+            bool_df = (stats.loc[:, 'mode'] == mode) & (stats.loc[:, 'temp'] == temp)
             rows = stats.loc[bool_df]
             temp_label = r'$T = {}^\circ C$'.format(temp)
             plt.plot(rows['voltage'], rows['outliers'], label=temp_label)
