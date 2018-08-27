@@ -319,7 +319,7 @@ class Experiment:
                 (default: '')
         '''
         if save_plot:
-            description = (value_label.lower() + 'hist').replace(' ', '_')
+            description = (value_label.lower() + '_hist').replace(' ', '_')
             save_path = self.construct_path('plot', ext=plot_ext, 
                 description=description, save_dir=plot_dir, subdir=plot_subdir,
                 etc=etc)
@@ -414,6 +414,7 @@ class Experiment:
         plt.xlabel(f'{xlabel}{axis_units}')
         plt.ylabel('Pixels') 
         plt.title(title)
+
         if save_plot:
             plt.savefig(save_path)
 
@@ -1098,7 +1099,7 @@ class Leakage(Experiment):
             temp = r'$' + str(temp) + r'^{\circ}$C'
             conditions = f'({temp}'
 
-            voltage = r'$' + str(voltage) + r' V$'
+            voltage = r'$' + str(voltage) + r'$V'
             conditions += f', {voltage}'
 
             conditions += f', {mode})'
@@ -1156,7 +1157,7 @@ class Leakage(Experiment):
     def slice_maps(self, mode, temp, voltage):
 
             row = self.slice_stats(mode, temp, voltage)
-            leak_map = self.leak_maps[row.name]
+            leak_map = self.maps[row.name]
             return leak_map
 
 
@@ -1254,7 +1255,7 @@ class Leakage(Experiment):
 
         # This array will store leakage maps for each combination of 
         # mode, voltage, and temperature.
-        self.leak_maps = np.empty((self.num_trials, 32, 32))
+        self.maps = np.empty((self.num_trials, 32, 32))
 
         # Sets 'filename' to the last directory in 'self.datapath'.
         filename = os.path.basename(self.datapath)
@@ -1344,7 +1345,7 @@ class Leakage(Experiment):
                     # Populate a layer of the leak_maps array with the leakage 
                     # leakage current map for the same parameters at the same 
                     # index as above.
-                    self.leak_maps[idx] = leak_map
+                    self.maps[idx] = leak_map
 
                     idx += 1
 
@@ -1354,9 +1355,9 @@ class Leakage(Experiment):
             self.stats.to_csv(stats_path)
             # The amalgam of leakage maps go to a .npy file (numpy binary file
             # - can't do ascii b/c its a 3D array).
-            np.save(maps_path, self.leak_maps)
+            np.save(maps_path, self.maps)
 
-        return self.stats, self.leak_maps
+        return self.stats, self.maps
 
 
     # 
@@ -1423,6 +1424,9 @@ class Leakage(Experiment):
                 A string appended to the filename (before the extension).
                 (default: '')
         '''
+        temp = int(temp)
+        voltage = int(voltage)
+
         leak_map = slice_maps(mode, temp, voltage)
 
         conditions = mode, temp, voltage
@@ -1500,7 +1504,9 @@ class Leakage(Experiment):
                 A string appended to the filename (before the extension).
                 (default: '')
         '''
-        
+        temp = int(temp)
+        voltage = int(voltage)
+
         leak_map = slice_maps(mode, temp, voltage)
 
         conditions = mode, temp, voltage
@@ -1517,7 +1523,7 @@ class Leakage(Experiment):
 
     def plot_all_maps(self, cmap_name='inferno', cb_label='', vmin=None, 
         vmax=None, title='', save_plot=True, plot_ext='.pdf', plot_dir='', 
-        plot_subdir='', etc=''):
+        plot_subdir=''):
         '''
         Plots a pixel histogram of leakage current at all combinations of
         mode, temperature, and leakage for this experiment. Essentially a 
@@ -1568,10 +1574,10 @@ class Leakage(Experiment):
             row = self.stats.loc[i]
 
             mode = row.at['mode']
-            temp = row.at['temp']
-            voltage = row.at['voltage']
+            temp = int(row.at['temp'])
+            voltage = int(row.at['voltage'])
 
-            leak_map = self.leak_maps[i]
+            leak_map = self.maps[i]
             conditions = (mode, temp, voltage)
             etc = f'{mode}_{temp}C_{voltage}V'
 
@@ -1588,7 +1594,7 @@ class Leakage(Experiment):
 
     def plot_all_hists(self, bins=70, hist_range=None, title='', 
         text_pos='right', save_plot=True, plot_dir='', plot_subdir='', 
-        plot_ext='.pdf', etc='', **kwargs):
+        plot_ext='.pdf', **kwargs):
         '''
         Plots a pixel histogram of leakage current at all combinations of
         mode, temperature, and leakage for this experiment. Essentially a 
@@ -1643,22 +1649,22 @@ class Leakage(Experiment):
             row = self.stats.loc[i]
 
             mode = row.at['mode']
-            temp = row.at['temp']
-            voltage = row.at['voltage']
+            temp = int(row.at['temp'])
+            voltage = int(row.at['voltage'])
 
-            leak_map = self.leak_maps[i]
+            leak_map = self.maps[i]
             conditions = (mode, temp, voltage)
             etc = f'{mode}_{temp}C_{voltage}V'
 
             if title  == 'auto':
                 title = self.title('Histogram', conditions)
 
-        self.plot_pixel_hist('Leakage', leak_map, bins=bins, 
-            hist_range=hist_range, title=title, text_pos=text_pos, 
-            save_plot=True, plot_dir=plot_dir, plot_subdir=plot_subdir, 
-            plot_ext=plot_ext, etc=etc, **kwargs)
+            self.plot_pixel_hist('Leakage', leak_map, bins=bins, 
+                hist_range=hist_range, title=title, text_pos=text_pos, 
+                save_plot=save_plot, plot_dir=plot_dir, 
+                plot_subdir=plot_subdir, plot_ext=plot_ext, etc=etc, **kwargs)
 
-        plt.close()
+            plt.close()
 
 
     def plot_line_current(self, title=None, mode='CP', save_plot=True, 
@@ -1685,6 +1691,9 @@ class Leakage(Experiment):
         plt.xlabel('Bias Voltage (V)')
         plt.ylabel('Mean Leakage Current (pA)')
 
+        if save_plot:
+            plt.savefig(save_path)
+
 
     def plot_line_outliers(self, title=None, mode='CP', save_plot=True, 
         plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
@@ -1708,6 +1717,9 @@ class Leakage(Experiment):
         plt.legend()
         plt.xlabel('Bias Voltage (V)')
         plt.ylabel(r'Number of Outlier Pixels ($> 5 \sigma$)')
+
+        if save_plot:
+            plt.savefig(save_path)
 
 
 class GammaFlood(Experiment):
