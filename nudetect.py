@@ -336,8 +336,8 @@ class Experiment:
 
         if 'count' in value_label.lower():
             if values is None: 
-                values = self.count_map.flatten()
-            if title is None:
+                values = self.count_map
+            if title == 'auto':
                 title = self.title('Count Histogram')
             xlabel = 'Counts'
             mean = int(round(np.mean(values), 0))
@@ -347,8 +347,8 @@ class Experiment:
 
         elif 'fwhm' in value_label.lower():
             if values is None: 
-                values = self._fwhm_map.flatten()
-            if title is None:
+                values = self._fwhm_map
+            if title == 'auto':
                 title = self.title('FWHM Histogram')
 
             # Setting some plot parameters and converting units based on whether 
@@ -372,7 +372,7 @@ class Experiment:
             if values is None:
                 raise ValueError('Must manually supply data for leakage '
                     + 'current.')
-            if title is None:
+            if title == 'auto':
                 title = self.title('Leakage Current Histogram')
 
             xlabel = 'Leakage Current'
@@ -390,6 +390,8 @@ class Experiment:
                 axis_units = kwargs['axis_units']
             mean = round(np.mean(values), 3)
             stdv = round(np.mean(values), 3)
+
+        values = values.flatten()
 
         # Make the plot
         plt.figure()
@@ -503,7 +505,7 @@ class Experiment:
                 cb_label = 'Counts'
             if values is None: 
                 values = self.count_map
-            if title is None:
+            if title == 'auto':
                 title = self.title('Count Map')
 
         elif 'fwhm' in value_label.lower():
