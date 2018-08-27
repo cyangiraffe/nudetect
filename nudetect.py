@@ -1166,8 +1166,7 @@ class Leakage(Experiment):
     #
 
     def gen_leakage_maps(self, save_data=True, data_dir='', data_subdir='', 
-        data_ext='.csv', save_plot=True, plot_dir='', plot_subdir='', 
-        plot_ext='.pdf'):
+        data_ext='.csv'):
         '''
         For each combination of mode (charge-pump or normal), voltage, and temperature, formats leakage current data into 32 x 32 pixel maps and calculates mean, standard deviation, and number of outliers.
 
@@ -1177,28 +1176,6 @@ class Leakage(Experiment):
         map in leak_maps[i].
 
         Keyword Arguments:
-            save_plot: bool
-                If true, plots and energy spectrum for each pixel and saves
-                the figure.
-                (default: True)
-            plot_dir: str
-                The directory to which the file will be saved, overriding any
-                path specified in the 'save_dir' attribute. If an empty string,
-                will default to the attribute 'save_dir'.
-                If the string passed to 'plot_dir' has an empty pair of curly 
-                braces '{}', they will be replaced by the detector ID 
-                'self.detector'. For example, if self.detector == 'H100' and 
-                plot_dir == 'figures/{}/pixels', then the directory that 
-                'save_path' points to is 'figures/H100/pixels'.
-                (default: '')
-            plot_subdir: str
-                A path to a sub-directory of 'plot_dir' to which the file will
-                be saved. Empty curly braces '{}' are formatted the same way
-                as in 'plot_dir'. 
-                (default: '')
-            plot_ext: str
-                The file name extension for the plot file.
-                (default: '.pdf')  
             save_data: bool 
                 If True, saves gain data as an ascii file.
                 (default: True)
@@ -1242,13 +1219,10 @@ class Leakage(Experiment):
         '''
         # Generating a save path, if necessary
         if save_data:
-            stats_path = self.construct_path(description='leak_stats', 
+            stats_path = self.construct_path('data', description='leak_stats', 
                 ext=data_ext, save_dir=data_dir, subdir=data_subdir)
-            maps_path = self.construct_path(description='leak_maps',
+            maps_path = self.construct_path('data', description='leak_maps',
                 ext='.npy', save_dir=data_dir, subdir=data_subdir)
-        if save_plot:
-            hist_path = self.construct_path(description='leak_hist',
-                ext=plot_ext, save_dir=plot_dir, subdir=plot_subdir)
 
         self.stats = pd.DataFrame(np.zeros((self.num_trials, 6)),
             columns=['mode', 'temp', 'voltage', 'mean', 'stddev', 'outliers'])
