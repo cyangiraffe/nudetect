@@ -1547,6 +1547,8 @@ class Leakage(Experiment):
 
         stats = self.stats
 
+        plt.figure()
+
         for temp in self.temps:
             bool_df = (stats.loc[:, 'mode'] == mode) & (stats.loc[:, 'temp'] == temp)
             rows = stats.loc[bool_df]
@@ -1574,6 +1576,8 @@ class Leakage(Experiment):
                 etc=etc)
 
         stats = self.stats
+
+        plt.figure()
 
         for temp in self.temps:
             bool_df = (stats.loc[:, 'mode'] == mode) & (stats.loc[:, 'temp'] == temp)
