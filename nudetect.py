@@ -31,6 +31,25 @@ import matplotlib.pyplot as plt
 import matplotlib.cm
 
 
+def to_set(x):
+    '''
+    Returns 'x' converted to a set. If 'x' is a string or scalar, then
+    a set containing 'x' as its only element is returned. If an iterable
+    other than a string is passed, it is converted to a set via the 
+    built-in 'set()' function.
+    '''
+    try:
+        # If 'x' is a string, return a set with 'x' as the only element.
+        if type(x) == str:
+            return {x}
+        # If 'x' is an iterable other than a string, convert normally.
+        return set(x)
+    # If 'x' is a scalar (other than a string), return a set with 'x'
+    # as its only element.
+    except TypeError:
+        return {x}
+
+
 class Line:
     '''
     A class for spectral lines. The infomation in each instance will help
@@ -1066,9 +1085,9 @@ class Leakage(Experiment):
                 Other important information to append to created files's names.
         '''
         # Convert temperatures and voltages to sets to avoid repeats
-        temps = set(temps)
-        cp_voltages = set(cp_voltages)
-        n_voltages = set(n_voltages)
+        temps = to_set(temps)
+        cp_voltages = to_set(cp_voltages)
+        n_voltages = to_set(n_voltages)
 
         self.datapath = datapath
         self.detector = detector
@@ -1114,7 +1133,7 @@ class Leakage(Experiment):
         return title
 
 
-    def slice_stats(self, mode, temp, voltage):
+    def slice_stats(self, modes=None, temps=None, voltages=None):
         '''
         A wrapper around the '.loc' method of pandas. This returns a 
         row(s) of the pandas DataFrame stored in the 'stats' attribute
@@ -1126,41 +1145,66 @@ class Leakage(Experiment):
             https://pandas.pydata.org/pandas-docs/stable/indexing.html
         The section on 'Boolean Indexing' is particularly helpful.
 
-        Arguments:
-            mode: str
+        Keyword Arguments:
+            modes: str
                 Can be 'CP' or 'N'. Indicates whether the desired measurement
                 was done in charge-pump or normal mode.
-            temp: int
+            temps: int
                 The temperature in degrees Celsius at which the desired 
                 measurement was done.
-            voltage: int
+            voltages: int
                 The bias voltage in Volts at which the desired measurement
                 was done.
 
-        Return:
-            trial: pandas.Series or pandas.DataFrame
+        Return: pandas.DataFrame
         '''
-        # Formatting inputs
-        mode = mode.upper()
-        temp = int(temp)
-        voltage = int(voltage)
-
-        # Aliasing the attribute
+        # Aliasing the 'stats' attribute
         df = self.stats
 
+        # Formatting inputs
+        if temps is not None: temps = to_set(temps)
+        if voltages is not None: voltages = to_set(voltages)
+        if modes is not None:
+            modes = to_set(modes)
+            # Ensuring 'modes' contains uppercase strings only
+            for mode in modes:
+                modes.remove(mode)
+                modes.add(mode.upper())
+
+        # Creating a Series full of True with the same shape as one
+        # column from 'self.stats'.
+        true_df = pd.Series(np.ones(df.shape[0]), dtype=bool)
+
+        # If 'None' was supplied for modes, temps, or voltages, set its
+        # respective boolean Series to 'true_df', so its respective
+        # value is ignored when slicing the 'stats' DataFrame. Otherwise,
+        # generate the boolean Series
+        if modes is None: 
+            bool_modes = true_df
+        else: 
+            bool_modes = df.loc[:, 'mode'].isin(modes)
+
+        if temps is None: 
+            bool_temps = true_df
+        else: 
+            bool_temps = df.loc[:, 'temp'].isin(temps)
+
+        if voltages is None: 
+            bool_voltages = true_df
+        else: 
+            bool_voltages = df.loc[:, 'voltage'].isin(voltages)
+
         # Generating a boolean DataFrame
-        bool_df = (df.loc['mode'] == mode) & \
-                  (df.loc['temp'] == temp) & \
-                  (df.loc['voltage'] == voltage)
+        bool_df = (bool_temps) & (bool_modes) & (bool_voltages)
 
         return df.loc[bool_df]
 
 
-    def slice_maps(self, mode, temp, voltage):
+    def slice_maps(self, mode=None, temp=None, voltage=None):
 
-            row = self.slice_stats(mode, temp, voltage)
-            leak_map = self.maps[row.name]
-            return leak_map
+        idx = self.slice_stats(mode, temp, voltage).index
+        leak_maps = self.maps[idx]
+        return leak_maps
 
 
     #
@@ -1309,8 +1353,8 @@ class Leakage(Experiment):
                     stddev = np.std(leak_map)
                     # 'outliers' in the number of pixels whose leakage 
                     # currents are 5 standard deviations from the mean.
-                    outliers = np.sum(np.absolute(
-                        leak_map - mean)) > 5 * stddev
+                    outliers = np.sum(np.absolute(leak_map - mean)
+                        > 5 * stddev)
 
                     # Record the data
 
@@ -1337,169 +1381,14 @@ class Leakage(Experiment):
 
 
     # 
-    # Plotting methods: 'plot_leak_map', 'plot_leak_hist', 'plot_all_maps', 
-    # 'plot_all_hists', and ''
+    # Plotting methods: 'plot_leak_maps', 'plot_leak_hists',  
+    # 'plot_line_current', and 'plot_line_outliers'.
     #
 
-    def plot_leak_map(self, mode, temp, voltage, cmap_name='inferno',  
-        cb_label='', vmin=None, vmax=None, title='', save_plot=True, 
-        plot_ext='.pdf', plot_dir='', plot_subdir='', etc=''):
-        '''
-        Plots a pixel histogram of leakage current at the specified mode, 
-        temperature, and voltage for this experiment. Essentially a wrapper
-        around the 'Experiment.plot_pixel_map' method.
 
-        Arguments:
-            mode: str
-                Can be 'CP' or 'N'. Indicates whether the desired measurement
-                was done in charge-pump or normal mode.
-            temp: int
-                The temperature in degrees Celsius at which the desired 
-                measurement was done.
-            voltage: int
-                The bias voltage in Volts at which the desired measurement
-                was done.
-
-        Keyword Arguments:
-            cmap_name: str
-                The name of a matplotlib colormap. Passed to 'mpl.cm.get_cmap'.
-                (default: 'inferno')
-            cb_label: str
-                This string becomes the color bar label. If the empty string,
-                the color bar label is chosen based on 'value_label'.
-                (default: '')
-            vmin: float
-                Passed directly to plt.imshow.
-                (default: None)
-            vmax: float
-                Passed directly to plt.imshow.
-                (default: None)
-            title: str
-                The figure title. If 'auto', a title is generated using the
-                'title' method. If an empty string is passed, no title
-                is shown.
-                (default: '')
-            save_plot: bool
-                If True, saves the plot to a file.
-            plot_dir: str
-                The directory to which the file will be saved, overriding any
-                path specified in the 'save_dir' attribute. If an empty string,
-                will default to the attribute 'save_dir'.
-                If the string passed to 'save_dir' has an empty pair of curly 
-                braces '{}', they will be replaced by the detector ID 
-                'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the directory that 
-                'save_path' points to is 'figures/H100/pixels'.
-                (default: '')
-            plot_subdir: str
-                A path to a sub-directory of 'save_dir' to which the file will
-                be saved. Empty curly braces '{}' are formatted the same way
-                as in 'save_dir'. 
-                (default: '')
-            etc: str
-                A string appended to the filename (before the extension).
-                (default: '')
-        '''
-        temp = int(temp)
-        voltage = int(voltage)
-
-        leak_map = slice_maps(mode, temp, voltage)
-
-        conditions = mode, temp, voltage
-        etc = f'{mode}_{temp}C_{voltage}V'
-
-        if title  == 'auto':
-            title = self.title('Map', conditions)
-
-        self.plot_pixel_map('Leakage', leak_map, cmap_name=cmap_name, 
-            cb_label=cb_label, vmin=vmin, vmax=vmax, title=title, 
-            save_plot=save_plot, plot_ext=plot_ext, plot_dir=plot_dir, 
-            plot_subdir=plot_subdir, etc=etc)
-
-
-    def plot_leak_hist(self, mode, temp, voltage, bins=70, 
-        hist_range=None, title='', text_pos='right', save_plot=True,
-        plot_dir='', plot_subdir='', plot_ext='.pdf', etc='', **kwargs):
-        '''
-        Plots a pixel histogram of leakage current at the specified mode, 
-        temperature, and voltage for this experiment. Essentially a wrapper
-        around the 'Experiment.plot_pixel_hist' method.
-
-        Arguments:
-            mode: str
-                Can be 'CP' or 'N'. Indicates whether the desired measurement
-                was done in charge-pump or normal mode.
-            temp: int
-                The temperature in degrees Celsius at which the desired 
-                measurement was done.
-            voltage: int
-                The bias voltage in Volts at which the desired measurement
-                was done.
-
-        Keyword Arguments:
-            bins: int
-                The number of bins in which to histogram the data. Passed 
-                directly to plt.hist.
-                (default: 50)
-            hist_range: tuple(number, number)
-                Indicated the range in which to bin data. Passed directly to
-                plt.hist. If None, it is set to (0, 4) for gain-corrected data
-                and to (0, 150) otherwise.
-                (default: None)
-            title: str
-                The figure title. If 'auto', a title is generated using the
-                'title' method. If an empty string is passed, no title
-                is shown.
-                (default: '')
-            text_pos: str
-                Indicates where information about mean and standard deviation
-                appears on the plot. If 'right', appears in upper right. If 
-                'left', appears in upper left.
-                (default: 'right')
-            save_plot: bool
-                If True, saves the plot to 'save_dir'.
-            plot_dir: str
-                The directory to which the file will be saved, overriding any
-                path specified in the 'save_dir' attribute. If an empty string,
-                will default to the attribute 'save_dir'.
-                If the string passed to 'save_dir' has an empty pair of curly 
-                braces '{}', they will be replaced by the detector ID 
-                'self.detector'. For example, if self.detector == 'H100' and 
-                save_dir == 'figures/{}/pixels', then the directory that 
-                'save_path' points to is 'figures/H100/pixels'.
-                (default: '')
-            plot_subdir: str
-                A path to a sub-directory of 'save_dir' to which the file will
-                be saved. Empty curly braces '{}' are formatted the same way
-                as in 'save_dir'. 
-                (default: '')
-            plot_ext: str
-                The file extension to the saved file.
-                (default: '.pdf')
-            etc: str
-                A string appended to the filename (before the extension).
-                (default: '')
-        '''
-        temp = int(temp)
-        voltage = int(voltage)
-
-        leak_map = slice_maps(mode, temp, voltage)
-
-        conditions = mode, temp, voltage
-        etc = f'{mode}_{temp}C_{voltage}V'
-
-        if title  == 'auto':
-            title = self.title('Histogram', conditions)
-
-        self.plot_pixel_hist('Leakage', leak_map, bins=bins, 
-            hist_range=hist_range, title=title, text_pos=text_pos, 
-            save_plot=True, plot_dir=plot_dir, plot_subdir=plot_subdir, 
-            plot_ext=plot_ext, etc=etc, **kwargs)
-
-
-    def plot_all_maps(self, cmap_name='inferno', cb_label='', vmin=None, 
-        vmax=None, title='', save_plot=True, plot_ext='.pdf', plot_dir='', 
-        plot_subdir=''):
+    def plot_leak_maps(self, modes=None, temps=None, voltages=None, 
+        cmap_name='inferno', cb_label='', vmin=None, vmax=None, title='', 
+        save_plot=True, plot_ext='.pdf', plot_dir='', plot_subdir=''):
         '''
         Plots a pixel histogram of leakage current at all combinations of
         mode, temperature, and leakage for this experiment. Essentially a 
@@ -1545,15 +1434,16 @@ class Leakage(Experiment):
                 A string appended to the filename (before the extension).
                 (default: '')
         '''
+        inds = self.slice_stats(modes, temps, voltages).index
 
-        for i in range(self.num_trials):
+        for i in inds:
             row = self.stats.loc[i]
+            leak_map = self.maps[i]
 
             mode = row.at['mode']
             temp = int(row.at['temp'])
             voltage = int(row.at['voltage'])
 
-            leak_map = self.maps[i]
             conditions = (mode, temp, voltage)
             etc = f'{mode}_{temp}C_{voltage}V'
 
@@ -1568,9 +1458,9 @@ class Leakage(Experiment):
             plt.close()
 
 
-    def plot_all_hists(self, bins=70, hist_range=None, title='', 
-        text_pos='right', save_plot=True, plot_dir='', plot_subdir='', 
-        plot_ext='.pdf', **kwargs):
+    def plot_leak_hists(self, modes=None, temps=None, voltages=None, 
+        bins=70, hist_range=None, title='', text_pos='right', save_plot=True, 
+        plot_dir='', plot_subdir='', plot_ext='.pdf', **kwargs):
         '''
         Plots a pixel histogram of leakage current at all combinations of
         mode, temperature, and leakage for this experiment. Essentially a 
@@ -1620,15 +1510,16 @@ class Leakage(Experiment):
                 A string appended to the filename (before the extension).
                 (default: '')
         '''
+        inds = self.slice_stats(modes, temps, voltages).index
 
-        for i in range(self.num_trials):
+        for i in inds:
             row = self.stats.loc[i]
+            leak_map = self.maps[i]
 
             mode = row.at['mode']
             temp = int(row.at['temp'])
             voltage = int(row.at['voltage'])
 
-            leak_map = self.maps[i]
             conditions = (mode, temp, voltage)
             etc = f'{mode}_{temp}C_{voltage}V'
 
@@ -1643,7 +1534,7 @@ class Leakage(Experiment):
             plt.close()
 
 
-    def plot_line_current(self, title=None, mode='CP', save_plot=True, 
+    def plot_line_current(self, title='', mode='CP', save_plot=True, 
         plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
         '''
         Plots a line graph of 'xval' on the x axis and 'yval' on the y axis,
@@ -1671,7 +1562,7 @@ class Leakage(Experiment):
             plt.savefig(save_path)
 
 
-    def plot_line_outliers(self, title=None, mode='CP', save_plot=True, 
+    def plot_line_outliers(self, title='', mode='CP', save_plot=True, 
         plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
         '''
         Plots a line graph of 'xval' on the x axis and 'yval' on the y axis,
