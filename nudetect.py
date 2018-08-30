@@ -1358,8 +1358,8 @@ class Leakage(Experiment):
                     'mode'    : Can be 'CP' or 'N' (charge-pump or normal)
                     'voltage' : The bias voltage in Volts
                     'temp'    : The temperature in Celsius
-                    'mean'    : The mean leakage current across the pixels
-                    'stddev'  : The corresponding standard deviation
+                    'mean'    : The mean leakage current across the pixels (pA)
+                    'stddev'  : The corresponding standard deviation (pA)
                     'outliers': Number of outlier pixels
             maps: 3D numpy.ndarray
                 An array of shape (n, 32, 32), where 'n' is the value held by
@@ -1475,10 +1475,11 @@ class Leakage(Experiment):
 
         # Saving data
         if save_data:
-            # Leakage statistics go to a CSV file
-            self.stats.to_csv(stats_path)
+            # Leakage statistics go to a CSV file. Since the index is trivial
+            # and inferred by pd.read_csv, we omit it in the save file.
+            self.stats.to_csv(stats_path, index=False)
             # The amalgam of leakage maps go to a .npy file (numpy binary file
-            # - can't do ascii b/c its a 3D array).
+            # - can't do ascii because it's a 3D array).
             np.save(maps_path, self.maps)
 
         return self.stats, self.maps
