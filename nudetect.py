@@ -5,7 +5,9 @@ plotting NuSTAR detector test data. Specifically, it has the classes
 distribution, gain correction, and generating a spectrum), 'Noise' for 
 electronic noise data, and 'Leakage' for leakage current data. 
 
-Each instance of one of these classes represents a single experiment done in the detector test lab (i.e., the data collected between running 'start startscreening' and 'start endscreening' in ITOS). Hence, each of these classes
+Each instance of one of these classes can represent a single experiment done 
+in the detector test lab (i.e., the data collected between running 'start 
+startscreening' and 'start endscreening' in ITOS). Hence, each of these classes
 inherits from an abstract 'Experiment' subclass, which contains methods and
 attributes shared amongst subclasses.
 
@@ -28,7 +30,7 @@ import astropy.io.ascii as asciio
 
 # Plotting packages
 import matplotlib.pyplot as plt
-import matplotlib.cm
+import matplotlib.cm # color map
 
 
 def to_set(x):
@@ -71,15 +73,18 @@ class Line:
         chan_high: int
             When searching the channel spectrum for peaks, channels above
             'chan_high' will be ignored.
+        etc: str
+            Any additional information
     '''
     # A dict to contain all instances of 'Line'
     lines = {}
 
-    def __init__(self, source, energy, chan_low, chan_high):
+    def __init__(self, source, energy, chan_low, chan_high, etc=''):
         self.source = source
         self.energy = energy
         self.chan_low = chan_low
         self.chan_high = chan_high
+        self.etc = etc
 
         # Formating 'source' as a LaTeX string and storing it in 'self.latex'
         sym, num = '', ''
@@ -245,8 +250,8 @@ class Experiment:
         # Constructing the path name
         #
 
-        # Construct the file name from the file name in 'self.datapath'.
-        filename = os.path.basename(self.datapath) # Extracts the filename
+        # Construct the file name from the file name in 'self.raw_data_path'.
+        filename = os.path.basename(self.raw_data_path) # Extracts the filename
         save_path = os.path.splitext(filename)[0] # Removes the extension
 
         # Map all whitespace characters and '.' to underscores
@@ -578,7 +583,7 @@ class Noise(Experiment):
     data analysis functions for noise data.
 
     Public attributes:
-        datapath: str
+        raw_data_path: str
             A path to the noise data.
         detector: str
             The detector ID.
@@ -588,10 +593,20 @@ class Noise(Experiment):
             The temperature in degrees Celsius.
         pos: int
             The detector position.
+        data_dir: str
+            The default directory to which processed data files are saved.
+            If supplied, this overrides the 'save_dir' kwarg, and uses the
+            same formatting. If an empty string, defaults to 'save_dir'.
+            (default: '')
+        plot_dir: str
+            The default directory to which plot files are saved. If 
+            supplied, this overrides the 'save_dir' kwarg, and uses the
+            same formatting. If an empty string, defaults to 'save_dir'.
+            (default: '')
         save_dir: str
-            A default directory to save file outputs to from this instance's 
-            methods. Method arguments let one choose a subdirectory of this 
-            path, or override it altogether.
+            A default directory to save file outputs to from this 
+            instance's  methods. Method arguments let one choose a 
+            subdirectory of this path, or override it altogether.
 
             If the string passed to 'save_dir' has an empty pair of curly 
             braces '{}', they will be replaced by the detector ID 
@@ -600,13 +615,13 @@ class Noise(Experiment):
             'save_path' points to is 'figures/H100/pixels'.
             (default: '')
 
+        etc: str
+            Other important information to append to created files's names.
         gain: 32 x 32 numpy.ndarray
             Pixel-by-pixel gain data for the detector. This can be supplied
             after initialization though the 'gain' attribute. Do not supply
             a dummy value here if no gain is available. The methods of this
             class take care of that.
-        etc: str
-            Other important information to append to created files's names.
         count_map: 2D numpy.ndarray
             A 32 x 32 array with the number of events collected during the 
             noise test at each corresponding pixel.
@@ -623,13 +638,13 @@ class Noise(Experiment):
             attribute should not have been initialized yet.
             (initialized to None)
     '''
-    def __init__(self, datapath, detector, voltage, temp, pos=0, gain=None, 
-        data_dir='', plot_dir='', save_dir='', etc=''):
+    def __init__(self, raw_data_path, detector, voltage, temp, pos=0, 
+        gain=None, data_dir='', plot_dir='', save_dir='', etc=''):
         '''
         Initialized an instance of the 'Noise' class.
 
         Arguments:
-            datapath: str
+            raw_data_path: str
                 A path to the noise data.
             detector: str
                 The detector ID.
@@ -693,7 +708,7 @@ class Noise(Experiment):
         self._fwhm_map = None
         self.count_map = None
 
-        self.datapath = datapath
+        self.raw_data_path = raw_data_path
         self.detector = detector
         self.temp = temp
         self.voltage = voltage
@@ -898,7 +913,7 @@ class Noise(Experiment):
                 ext=plot_ext)
 
         # Get data from noise FITS file
-        with fits.open(self.datapath) as file:
+        with fits.open(self.raw_data_path) as file:
             data = file[1].data
 
         if not gain_bool:
@@ -1019,43 +1034,94 @@ class Leakage(Experiment):
     data analysis functions for leakage current data.
 
     Public attributes:
-        datapath: str
-            A path to the noise data.
+        raw_data_path: str
+            A path to a directory containing ascii files of leakage data.
         detector: str
             The detector ID.
-        temp: str
-            The temperature in degrees Celsius.
+        temps: set of numbers
+            The set of temperatures at which leakage current was tested.
+        cp_voltages: set of numbers
+            The bias voltages in Volts at which leakage current was tested
+            using charge-pump mode.
+            (default: {100, 200, 300, 400, 500, 600})
+        n_voltages: set of numbers
+            The bias voltages in Volts at which leakage current was tested
+            using normal mode.
+            (default: {300, 400, 500, 600})
+        all_voltages: set of numbers
+            All bias voltages at which leakage current was tested (could have
+            been in normal mode, charge-pump mode, or both). Generated from 
+            'cp_voltages' and 'n_voltages'.
+        num_trials: int
+            The number of trials/measurements of leakage current done given
+            this raw_data_path (at different combinations of mode, temperature, and
+            bias voltage). Calculated from 'cp_voltages', 'n_voltages', and 
+            'temps'.
         pos: int
             The detector position.
-        voltages: 1D array-like of numbers:
-            The bias voltages in Volts.
+        data_dir: str
+            The default directory to which processed data files are saved.
+            If supplied, this overrides the 'save_dir' kwarg, and uses the
+            same formatting. If an empty string, defaults to 'save_dir'.
+            (default: '')
+        plot_dir: str
+            The default directory to which plot files are saved. If 
+            supplied, this overrides the 'save_dir' kwarg, and uses the
+            same formatting. If an empty string, defaults to 'save_dir'.
+            (default: '')
+        save_dir: str
+            A default directory to save file outputs to from this 
+            instance's  methods. Method arguments let one choose a 
+            subdirectory of this path, or override it altogether.
+
+            If the string passed to 'save_dir' has an empty pair of curly 
+            braces '{}', they will be replaced by the detector ID 
+            'self.detector'. For example, if self.detector == 'H100' and 
+            save_dir == 'figures/{}/pixels', then the directory that 
+            'save_path' points to is 'figures/H100/pixels'.
+            (default: '')
         etc: str
             Other important information to append to created files's names.
-        TODO: there's a lot more of these.
+
+        stats: pandas.DataFrame
+            A DataFrame with 1 row for each combination of parameters. The
+            columns are described as follows: 
+                'mode'    : Can be 'CP' or 'N' (charge-pump or normal)
+                'voltage' : The bias voltage in Volts
+                'temp'    : The temperature in Celsius
+                'mean'    : The mean leakage current across the pixels
+                'stddev'  : The corresponding standard deviation
+                'outliers': Number of outlier pixels
+        maps: 3D numpy.ndarray
+            An array of shape (n, 32, 32), where 'n' is the value held by
+            the 'num_trials' attribute, which indicates the number of 
+            combinations of mode, voltage, and temperature. Slicing like
+            'maps[n]' gives a 32 x 32 pixel map of leakage current.
+
     '''
-    def __init__(self, datapath, detector, temps, 
+    def __init__(self, raw_data_path, detector, temps, 
         cp_voltages={100, 200, 300, 400, 500, 600}, 
         n_voltages={300, 400, 500, 600},
         pos=0, data_dir='', plot_dir='', save_dir='', etc=''):
         '''
-        Initialized an instance of the 'Noise' class.
+        Initialize an instance of the 'Leakage' class.
 
         Arguments:
-            datapath: str
-                A path to the noise data.
+            raw_data_path: str
+                A path to a directory containing ascii files of leakage data.
             detector: str
                 The detector ID.
             temps: set of numbers
-                The temperatures in degrees Celsius.
+                The set of temperatures at which leakage current was tested.
 
         Keyword arguments:
-            cp_voltages: set or array-like of numbers:
-                The bias voltages in volts used for testing in 
-                charge-pump mode.
+            cp_voltages: set of numbers
+                The bias voltages in Volts at which leakage current was tested
+                using charge-pump mode.
                 (default: {100, 200, 300, 400, 500, 600})
-            n_voltages: set or array-like of numbers:
-                The bias voltages in volts used for testing in 
-                normal mode.
+            n_voltages: set of numbers
+                The bias voltages in Volts at which leakage current was tested
+                using normal mode.
                 (default: {300, 400, 500, 600})
             pos: int
                 The detector position.
@@ -1089,7 +1155,7 @@ class Leakage(Experiment):
         cp_voltages = to_set(cp_voltages)
         n_voltages = to_set(n_voltages)
 
-        self.datapath = datapath
+        self.raw_data_path = raw_data_path
         self.detector = detector
         self.temps = temps
         self.cp_voltages = cp_voltages
@@ -1133,93 +1199,131 @@ class Leakage(Experiment):
         return title
 
 
-    def slice_stats(self, modes=None, temps=None, voltages=None):
+    def slice_stats(self, mode=None, temp=None, voltage=None):
         '''
-        A wrapper around the '.loc' method of pandas. This returns a 
-        row(s) of the pandas DataFrame stored in the 'stats' attribute
-        with the given mode, temperature, and voltage. If a single row,
-        its index in the original DataFrame can be accessed via its 
-        'name' attribute.
+        A wrapper around the '.loc' method of pandas. This returns
+        row(s) of the 'stats' DataFrame containing the given mode(s), 
+        temperature(s), and voltage(s). If 'None' (the default value) is
+        passed to any of the arguments, the DataFrame won't be sliced
+        with respect to the arguments respective value.
+
+        For example, setting mode='CP', temp={-5, 0, 5}, and leaving
+        voltage=None will slice out all rows with charge-pump mode, a
+        temperature of -5, 0, or 5 degrees Celsius, and any voltage.
 
         For more advanced indexing options, the the pandas documentation:
             https://pandas.pydata.org/pandas-docs/stable/indexing.html
         The section on 'Boolean Indexing' is particularly helpful.
 
         Keyword Arguments:
-            modes: str
-                Can be 'CP' or 'N'. Indicates whether the desired measurement
-                was done in charge-pump or normal mode.
-            temps: int
-                The temperature in degrees Celsius at which the desired 
+            mode: str or set of str
+                String values can be can be 'CP' or 'N'. Indicates whether the 
+                desired measurement was done in charge-pump or normal mode.
+                (default: None)
+            temp: int or set of ints
+                Indicates temperature in degrees Celsius at which the desired 
                 measurement was done.
-            voltages: int
+                (default: None)
+            voltage: int or set of ints
                 The bias voltage in Volts at which the desired measurement
                 was done.
+                (default: None)
 
         Return: pandas.DataFrame
+            A slice of the 'stats' attribute's DataFrame, as at the beginning 
+            of this method's docstring.
         '''
         # Aliasing the 'stats' attribute
         df = self.stats
 
         # Formatting inputs
-        if temps is not None: temps = to_set(temps)
-        if voltages is not None: voltages = to_set(voltages)
-        if modes is not None:
-            modes = to_set(modes)
-            # Ensuring 'modes' contains uppercase strings only
-            for mode in modes:
-                modes.remove(mode)
-                modes.add(mode.upper())
+        if temp is not None: temp = to_set(temp)
+        if voltage is not None: voltage = to_set(voltage)
+        if mode is not None:
+            mode = to_set(mode)
+            # Ensuring 'mode' contains uppercase strings only
+            for m in mode:
+                mode.remove(m)
+                mode.add(m.upper())
 
         # Creating a Series full of True with the same shape as one
         # column from 'self.stats'.
         true_df = pd.Series(np.ones(df.shape[0]), dtype=bool)
 
-        # If 'None' was supplied for modes, temps, or voltages, set its
+        # If 'None' was supplied for mode, temp, or voltage, set its
         # respective boolean Series to 'true_df', so its respective
         # value is ignored when slicing the 'stats' DataFrame. Otherwise,
         # generate the boolean Series
-        if modes is None: 
-            bool_modes = true_df
+        if mode is None: 
+            bool_mode = true_df
         else: 
-            bool_modes = df.loc[:, 'mode'].isin(modes)
+            bool_mode = df.loc[:, 'mode'].isin(mode)
 
-        if temps is None: 
-            bool_temps = true_df
+        if temp is None: 
+            bool_temp = true_df
         else: 
-            bool_temps = df.loc[:, 'temp'].isin(temps)
+            bool_temp = df.loc[:, 'temp'].isin(temp)
 
-        if voltages is None: 
+        if voltage is None: 
             bool_voltages = true_df
         else: 
-            bool_voltages = df.loc[:, 'voltage'].isin(voltages)
+            bool_voltages = df.loc[:, 'voltage'].isin(voltage)
 
         # Generating a boolean DataFrame
-        bool_df = (bool_temps) & (bool_modes) & (bool_voltages)
+        bool_df = (bool_temp) & (bool_mode) & (bool_voltages)
 
         return df.loc[bool_df]
 
 
     def slice_maps(self, mode=None, temp=None, voltage=None):
+        '''
+        If 'None' (the default value) is
+        passed to any of the arguments, the DataFrame won't be sliced
+        with respect to the arguments respective value.
 
+        For example, setting mode='CP', temp={-5, 0, 5}, and leaving
+        voltage=None will slice out all rows with charge-pump mode, a
+        temperature of -5, 0, or 5 degrees Celsius, and any voltage.
+
+        For more advanced indexing options, the the pandas documentation:
+            https://pandas.pydata.org/pandas-docs/stable/indexing.html
+        The section on 'Boolean Indexing' is particularly helpful.
+
+        Keyword Arguments:
+            mode: str or set of str
+                String values can be can be 'CP' or 'N'. Indicates whether the 
+                desired measurement was done in charge-pump or normal mode.
+                (default: None)
+            temp: int or set of ints
+                Indicates temperature in degrees Celsius at which the desired 
+                measurement was done.
+                (default: None)
+            voltage: int or set of ints
+                The bias voltage in Volts at which the desired measurement
+                was done.
+                (default: None)
+
+        Return: 2D or 3D numpy.ndarray
+            A slice of the 'stats' attribute's DataFrame, as at the beginning 
+            of this method's docstring.
+        '''
         idx = self.slice_stats(mode, temp, voltage).index
-        leak_maps = self.maps[idx]
-        return leak_maps
+        return self.maps[idx]
 
 
     #
     # Heavy-lifting data analysis method: 'gen_leakage_maps'
     #
 
-    def gen_leakage_maps(self, save_data=True, data_dir='', data_subdir='', 
+    def gen_leak_maps(self, save_data=True, data_dir='', data_subdir='', 
         data_ext='.csv'):
         '''
-        For each combination of mode (charge-pump or normal), voltage, and temperature, formats leakage current data into 32 x 32 pixel maps and calculates mean, standard deviation, and number of outliers.
+        For each combination of mode (charge-pump or normal), voltage, and temperature, formats leakage current data into 32 x 32 pixel maps and calculates mean, standard deviation, and number of outlier pixels.
 
-        The indices in the 'stats' pandas.DataFrame and the 'leak_maps' 3D
+        The indices in the 'stats' pandas.DataFrame and the 'maps' 3D
         numpy.ndarray correspond to each other. I.e., stats[i] contains the
         mean, stddev, outliers, and experimental conditions for the leakage
-        map in leak_maps[i].
+        map in maps[i].
 
         Keyword Arguments:
             save_data: bool 
@@ -1257,11 +1361,11 @@ class Leakage(Experiment):
                     'mean'    : The mean leakage current across the pixels
                     'stddev'  : The corresponding standard deviation
                     'outliers': Number of outlier pixels
-            leak_maps: 3D numpy.ndarray
+            maps: 3D numpy.ndarray
                 An array of shape (n, 32, 32), where 'n' is the value held by
                 the 'num_trials' attribute, which indicates the number of 
                 combinations of mode, voltage, and temperature. Slicing like
-                'leak_maps[n]' gives a 32 x 32 pixel map of leakage current.
+                'maps[n]' gives a 32 x 32 pixel map of leakage current.
         '''
         # Generating a save path, if necessary
         if save_data:
@@ -1277,8 +1381,8 @@ class Leakage(Experiment):
         # mode, voltage, and temperature.
         self.maps = np.empty((self.num_trials, 32, 32))
 
-        # Sets 'filename' to the last directory in 'self.datapath'.
-        filename = os.path.basename(self.datapath)
+        # Sets 'filename' to the last directory in 'self.raw_data_path'.
+        filename = os.path.basename(self.raw_data_path)
 
         # 'start' and 'end' define the indices of the pixels at the given 
         # detector position are.
@@ -1295,9 +1399,9 @@ class Leakage(Experiment):
             cp_zero = np.empty((32, 32))
 
             cp_zero_data = asciio.read(
-                f'{self.datapath}/{filename}_{temp}C.C0V.txt')
+                f'{self.raw_data_path}/{filename}_{temp}C.C0V.txt')
             n_zero_data = asciio.read(
-                f'{self.datapath}/{filename}_{temp}C.N0V.txt')
+                f'{self.raw_data_path}/{filename}_{temp}C.N0V.txt')
             
             for pix in range(start, end): # Iterating through pixels
                 # Pixel coordinates in charge pump mode
@@ -1334,7 +1438,7 @@ class Leakage(Experiment):
 
                     # Read in the data file for the current voltage and 
                     # temperature in CP mode.
-                    data = asciio.read(f'{self.datapath}/{filename}_'
+                    data = asciio.read(f'{self.raw_data_path}/{filename}_'
                         + f'{temp}C.{mode[0]}{voltage}V.txt')
 
                     # Generating a leakage current map at the current voltage,
@@ -1386,15 +1490,29 @@ class Leakage(Experiment):
     #
 
 
-    def plot_leak_maps(self, modes=None, temps=None, voltages=None, 
+    def plot_leak_maps(self, mode=None, temp=None, voltage=None, 
         cmap_name='inferno', cb_label='', vmin=None, vmax=None, title='', 
         save_plot=True, plot_ext='.pdf', plot_dir='', plot_subdir=''):
         '''
-        Plots a pixel histogram of leakage current at all combinations of
-        mode, temperature, and leakage for this experiment. Essentially a 
+        Plots a pixel histogram of leakage current at the designated 
+        combinations of mode, temperature, and leakage for this experiment. 
+        How these combinations are made is specified in the docstring for the 
+        'Leakage.slice_stats' method. 'plot_leak_maps' is essentially a 
         wrapper around the 'Experiment.plot_pixel_map' method.
 
         Keyword Arguments:
+            mode: str or set of str
+                String values can be can be 'CP' or 'N'. Indicates whether the 
+                desired measurement was done in charge-pump or normal mode.
+                (default: None)
+            temp: int or set of ints
+                Indicates temperature in degrees Celsius at which the desired 
+                measurement was done.
+                (default: None)
+            voltage: int or set of ints
+                The bias voltage in Volts at which the desired measurement
+                was done.
+                (default: None)
             cmap_name: str
                 The name of a matplotlib colormap. Passed to 'mpl.cm.get_cmap'.
                 (default: 'inferno')
@@ -1430,11 +1548,8 @@ class Leakage(Experiment):
                 be saved. Empty curly braces '{}' are formatted the same way
                 as in 'save_dir'. 
                 (default: '')
-            etc: str
-                A string appended to the filename (before the extension).
-                (default: '')
         '''
-        inds = self.slice_stats(modes, temps, voltages).index
+        inds = self.slice_stats(mode, temp, voltage).index
 
         for i in inds:
             row = self.stats.loc[i]
@@ -1458,15 +1573,29 @@ class Leakage(Experiment):
             plt.close()
 
 
-    def plot_leak_hists(self, modes=None, temps=None, voltages=None, 
+    def plot_leak_hists(self, mode=None, temp=None, voltage=None, 
         bins=70, hist_range=None, title='', text_pos='right', save_plot=True, 
         plot_dir='', plot_subdir='', plot_ext='.pdf', **kwargs):
         '''
-        Plots a pixel histogram of leakage current at all combinations of
-        mode, temperature, and leakage for this experiment. Essentially a 
+        Plots a pixel histogram of leakage current at the designated 
+        combinations of mode, temperature, and leakage for this experiment. 
+        How these combinations are made is specified in the docstring for the 
+        'Leakage.slice_stats' method. 'plot_leak_hists' is essentially a 
         wrapper around the 'Experiment.plot_pixel_hist' method.
 
         Keyword Arguments:
+            mode: str or set of str
+                String values can be can be 'CP' or 'N'. Indicates whether the 
+                desired measurement was done in charge-pump or normal mode.
+                (default: None)
+            temp: int or set of ints
+                Indicates temperature in degrees Celsius at which the desired 
+                measurement was done.
+                (default: None)
+            voltage: int or set of ints
+                The bias voltage in Volts at which the desired measurement
+                was done.
+                (default: None)
             bins: int
                 The number of bins in which to histogram the data. Passed 
                 directly to plt.hist.
@@ -1506,11 +1635,8 @@ class Leakage(Experiment):
             plot_ext: str
                 The file extension to the saved file.
                 (default: '.pdf')
-            etc: str
-                A string appended to the filename (before the extension).
-                (default: '')
         '''
-        inds = self.slice_stats(modes, temps, voltages).index
+        inds = self.slice_stats(mode, temp, voltage).index
 
         for i in inds:
             row = self.stats.loc[i]
@@ -1535,9 +1661,41 @@ class Leakage(Experiment):
 
 
     def plot_line_current(self, title='', mode='CP', save_plot=True, 
-        plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
+        plot_dir='', plot_subdir='', plot_ext='.pdf'):
         '''
-        Plots a line graph of 'xval' on the x axis and 'yval' on the y axis,
+        Plots mean leakage current versus bias voltage as a line plot, with a 
+        line for each temperature. Done for only one mode. Error bars included
+        and represent the standard deviation of leakage current across pixels.
+
+        Keyword Arguments:
+            title: str
+                The figure title. If 'auto', a title is generated using the
+                'title' method. If an empty string is passed, no title
+                is shown.
+                (default: '')
+            mode: str
+                The mode that is plotted.
+                (default: 'CP')
+            save_plot: bool
+                If True, saves the plot to 'save_dir'.
+            plot_dir: str
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            plot_subdir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
+                (default: '')
+            plot_ext: str
+                The file extension to the saved file.
+                (default: '.pdf')
         '''
         if save_plot:
             description = 'leakage_voltage_line'
@@ -1567,7 +1725,39 @@ class Leakage(Experiment):
     def plot_line_outliers(self, title='', mode='CP', save_plot=True, 
         plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
         '''
-        Plots a line graph of 'xval' on the x axis and 'yval' on the y axis,
+        Plots number of outlier pixels (with leakage > 5-sigma from mean)
+        versus bias voltage as a line plot, with a line for each temperature. 
+        Done for only one mode.
+
+        Keyword Arguments:
+            title: str
+                The figure title. If 'auto', a title is generated using the
+                'title' method. If an empty string is passed, no title
+                is shown.
+                (default: '')
+            mode: str
+                The mode that is plotted.
+                (default: 'CP')
+            save_plot: bool
+                If True, saves the plot to 'save_dir'.
+            plot_dir: str
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'save_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                save_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            plot_subdir: str
+                A path to a sub-directory of 'save_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'save_dir'. 
+                (default: '')
+            plot_ext: str
+                The file extension to the saved file.
+                (default: '.pdf')
         '''
         if save_plot:
             description = 'outliers_voltage_line'
@@ -1599,7 +1789,7 @@ class GammaFlood(Experiment):
     data analysis functions for gamma flood data.
 
     Public attributes:
-        datapath: str
+        raw_data_path: str
             Path to gamma flood data. Should be a FITS file. Used to access
             data and to construct new file names.
         detector: str
@@ -1643,14 +1833,14 @@ class GammaFlood(Experiment):
             to the value stored in self.spectrum.
             (initialized to None)
     '''
-    def __init__(self, datapath, detector, source, voltage, temp, 
+    def __init__(self, raw_data_path, detector, source, voltage, temp, 
         data_dir='', plot_dir='', save_dir='', etc=''):
 
         '''
         Initializes an instance of the 'GammaFlood' class.
 
         Arguments:
-            datapath: str
+            raw_data_path: str
                 Path to gamma flood data. Should be a FITS file. Used to access
                 data and to construct new file names.
             detector: str
@@ -1711,7 +1901,7 @@ class GammaFlood(Experiment):
         self.spectrum = None
 
         # Set user-supplied attributes
-        self.datapath = datapath
+        self.raw_data_path = raw_data_path
         self.detector = detector
         self.source = source
         self.voltage = voltage
@@ -1822,7 +2012,7 @@ class GammaFlood(Experiment):
 
 
         # Get data from gamma flood FITS file
-        with fits.open(self.datapath) as file:
+        with fits.open(self.raw_data_path) as file:
             data = file[1].data
 
         # The masks ('mask', 'PHmask', 'STIMmask', and 'TOTmask') below show 
@@ -1973,7 +2163,7 @@ class GammaFlood(Experiment):
             line = self.line()
 
         # Get data from gamma flood FITS file
-        with fits.open(self.datapath) as file:
+        with fits.open(self.raw_data_path) as file:
             data = file[1].data
 
         mask = data['TEMP'] > -20
@@ -2159,7 +2349,7 @@ class GammaFlood(Experiment):
         gain = gain_buffed
 
         # Get data from gamma flood FITS file
-        with fits.open(self.datapath) as file:
+        with fits.open(self.raw_data_path) as file:
             data = file[1].data
 
         # 'start' and 'end' denote the indices between which 'data['TEMP']'
@@ -2353,9 +2543,9 @@ if __name__ == '__main__':
     # Run complete gamma flood data analysis.
     if experiment == 'gamma' or experiment == 'gammaflood':
 
-        datapath = input('Enter the path to the gamma flood data: ')
-        while not os.path.exists(datapath):
-            datapath = input("That path doesn't exist. " + 
+        raw_data_path = input('Enter the path to the gamma flood data: ')
+        while not os.path.exists(raw_data_path):
+            raw_data_path = input("That path doesn't exist. " + 
                 "Enter another path to the gamma flood data: ")
 
         source = input('Enter the name of the source used (Am241 or Co57): ')
@@ -2365,7 +2555,7 @@ if __name__ == '__main__':
         data_dir = input('Enter a directory to save output data to: ')
         plot_dir = input('Enter a directory to save output plots to: ')
 
-        gamma = GammaFlood(datapath, detector, source, voltage, temp,
+        gamma = GammaFlood(raw_data_path, detector, source, voltage, temp,
             data_dir=data_dir, plot_dir=plot_dir)
 
         pixel_dir = input('Enter a subdirectory to save pixel spectra to: ')
@@ -2394,9 +2584,9 @@ if __name__ == '__main__':
     elif experiment == 'noise':
 
         # Requesting paths to noise and gain data
-        datapath = input('Enter the path to the noise data: ')
-        while not os.path.exists(datapath):
-            datapath = input("That path doesn't exist. " + 
+        raw_data_path = input('Enter the path to the noise data: ')
+        while not os.path.exists(raw_data_path):
+            raw_data_path = input("That path doesn't exist. " + 
                 "Enter another path to the noise data: ")
 
         gainpath = input('Enter the path to the gain data, or leave blank ' + 
@@ -2404,7 +2594,7 @@ if __name__ == '__main__':
         # Request a different input if a non-existent path (other than an
         # empty string) was given for 'gainpath'.
         while not os.path.exists(gainpath) and gainpath:
-            datapath = input("That path doesn't exist. " + 
+            raw_data_path = input("That path doesn't exist. " + 
                 "Enter another path to the noise data: ")
         
         gain = None
@@ -2419,7 +2609,7 @@ if __name__ == '__main__':
         data_dir = input('Enter a directory to save data outputs to: ')
         plot_dir = input('Enter a directory to save plot outputs to: ')
 
-        noise = Noise(datapath, detector, voltage, temp, pos, gain=gain,
+        noise = Noise(raw_data_path, detector, voltage, temp, pos, gain=gain,
             data_dir=data_dir, plot_dir=plot_dir)
 
         pixel_dir = input('Enter a subdirectory to save pixel spectra to: ')
