@@ -366,8 +366,7 @@ class Experiment:
             # hist_range = (0, np.max(values) + 1)
 
         elif 'fwhm' in value_label.lower():
-            if xlabel is None:
-                xlabel = 'FWHM'
+            xlabel = 'FWHM'
             if values is None: 
                 values = self._fwhm_map
             if title == 'auto':
