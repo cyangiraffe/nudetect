@@ -1191,7 +1191,7 @@ class Leakage(Experiment):
 
             conditions += f', {mode})'
 
-        title = f'{plot} {self.detector} {conditions}'.strip()
+        title = f'Leakage {plot} {self.detector} {conditions}'.strip()
 
         if self.etc:
             title += f' -- {self.etc}'
