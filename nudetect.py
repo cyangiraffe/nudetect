@@ -10,10 +10,6 @@ in the detector test lab (i.e., the data collected between running 'start
 startscreening' and 'start endscreening' in ITOS). Hence, each of these classes
 inherits from an abstract 'Experiment' subclass, which contains methods and
 attributes shared amongst subclasses.
-
-If this module is run as a script from the command line, it will run a complete
-analysis on one experiment (indicated via command line argument) with minimal
-parameter customization.
 '''
 
 # Packages for making life easier
@@ -2528,6 +2524,8 @@ class GammaFlood(Experiment):
         if save_plot:
             plt.savefig(save_path)
 
+
+# DEPRECATED: the code below will be in a separate file in the future.
 
 # If this file is run as a script, the code below will run a complete pipeline
 # for an experiment's data analysis with limited parameter customization.
