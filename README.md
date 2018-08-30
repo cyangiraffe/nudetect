@@ -1,4 +1,4 @@
-# NuDetect
+# NuDetect (alpha)
 
 NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data) and ```Leakage``` (for leakage current data, WIP). 
 
@@ -11,6 +11,7 @@ Currently, the package can be crudely installed by putting the 'nudetect.py' fil
 ### Required Packages
 
 * Numpy
+* Pandas
 * Astropy
 * Scipy
 * Matplotlib
@@ -26,7 +27,7 @@ from nudetect import GammaFlood
 # Here, we initialize a 'GammaFlood' object. This stores information about the 
 # experiment, and will be populated with analyzed data as we call its methods
 # for processing the raw gamma flood data.
-gamma = GammaFlood('20170315_H100_gamma_Am241_-10C.0V.fits', # raw data
+gamma = GammaFlood('raw_data/20170315_H100_Am241_-10C_400V.fits', # raw data
 					data_dir='data/{}', # default save directory for data
 					plot_dir='plots/{}', # default save directory for plots
 					detector='H100', # detector ID
@@ -70,6 +71,7 @@ gamma.gen_spectrum()
 #
 # Plotting
 #
+
 
 # The plotting methods called below draw data from the processed 
 # data attributes populated above.
