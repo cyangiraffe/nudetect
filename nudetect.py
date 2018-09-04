@@ -48,43 +48,56 @@ def to_set(x):
         return {x}
 
 
-class Line:
-    '''
-    A class for spectral lines. The infomation in each instance will help
-    supply parameters for fitting peaks. New instances can be created on 
-    the fly and instances defined in the source code can be temporarily
-    modified as needed. The data instances contain will usually be accessed
-    by the 'line' method of the 'Experiment' class.
+def check_positive(**kwargs):
+    '''Raises a ValueError if a parameter is non-positive.'''
+    for name in kwargs:
+        x = kwargs[name]
+        if x <= 0:
+            raise ValueError(f"'{name}' must be positive. Instead got {x}")
 
-    Attributes:
-        source: str
-            The name of the radioactive source producing the line. This is
-            case-sensitive, and should be formatted as in the example below.
-            E.g., 'Am241'
-        energy: float
-            The energy of the line in keV.
-        chan_low: int
-            When searching the channel spectrum for peaks, channels below
-            'chan_low' will be ignored.
-        chan_high: int
-            When searching the channel spectrum for peaks, channels above
-            'chan_high' will be ignored.
-        etc: str
-            Any additional information
-    '''
-    # A dict to contain all instances of 'Line'
-    lines = {}
 
-    def __init__(self, source, energy, chan_low, chan_high, etc=''):
-        self.source = source
-        self.energy = energy
-        self.chan_low = chan_low
-        self.chan_high = chan_high
-        self.etc = etc
+def check_channel(**kwargs):
+    '''Checks that values representing channels are correctly formatted.'''
+    for name in kwargs:
+        x = kwargs[name]
+        if x < 0 or x > 10000:
+            raise ValueError(f"Should have 0 <= {name} <= 10000. "
+                + f"Instead got {name} == {x}.")
+
+
+class Source:
+    '''
+    A class for storing information about X-ray sources.
+    '''
+    # 'all_energies' contains the energies of specral lines for fitting for
+    # each X-ray source.
+    all_energies = {
+        'Am241': {13.9, 59.54},
+        'Co57' : {122.06, 136.47},
+        'Eu155': {6.06, 86.55, 105.31}
+    }
+
+    # 'default_energies' indicates which energy to supply if none is specified.
+    default_energies = {
+        'Am241': 59.54
+        'Co57' : 122.06
+        'Eu155': 86.55
+    }
+
+    source_df = pd.read_csv('xray_sources.csv')
+
+    def __init__(self, name, alias, identifier, date_acquired):
+
+        self.name = name
+        self.date_acquired = date_acquired
+        self.identifier = identifier
+        try: self.energies = self.all_energies[name]
+        except KeyError: raise KeyError(f"The source {name} isn't documented.")
+        self.default_energy = self.default_energies[name]
 
         # Formating 'source' as a LaTeX string and storing it in 'self.latex'
         sym, num = '', ''
-        for char in source:
+        for char in name:
             if char in string.ascii_letters:
                 sym += char
             elif char in string.digits:
@@ -92,8 +105,126 @@ class Line:
 
         self.latex = r'${}^{' + num + r'}$' + sym
 
-        # Add this instance to 'lines' upon instantiation
-        Line.lines[source] = self
+
+    def line(self, energy=None, chan_range=None, gain_estimate=0.014,
+        lower_bound=100, upper_bound=9900, width=3000):
+        '''
+        Given the approximate energy of this source's desired spectral line, 
+        this function returns information needed to fit a Gaussian to the line.
+
+        Keyword Arguments:
+            energy: number
+                The approximate energy of the spectral line in keV. Will
+                work as long as rounding both 'energy' and the actual energy
+                (as recorded in the 'all_energies' class attribute) to the 
+                ones place yeild the same number. If None, will default to the 
+                value stored in the 'default_energy' attribute.
+                (default: None)
+            chan_range: Tuple(int, int)
+                Allows the user to manually specify the channels in between
+                which to look for the specral line. If None, it is calculated
+                normally.
+                (default: None)
+            gain_estimate: float
+                An estimate of the gain for the detector. Used to estimate the
+                recorded response of the line in channels. 
+                (energy in keV) / gain = (energy in channels)
+                (defautl: 0.014)
+            lower_bound: int
+                If either element of 'chan_range' is calculated to be below
+                'lower_bound', it will instead be set equal to 'lower_bound'.
+                (default: 100)
+            upper_bound: int
+                If either element of 'chan_range' is calculated to be above
+                'upper_bound', it will instead be set equal to 'upper_bound'.
+                (default: 9900)
+            width: int
+                The width of the interval specified by 'chan_range'.
+                (default: 3000)
+
+        Return: Tuple(float, int, int)
+            accurate_energy: float
+                The high precision value of the line's energy in keV.
+            chan_low: int
+                Indicates that methods using this information for fitting
+                should not look for this line lower than 'chan_low' channels.
+            chan_high: int
+                Indicates that methods using this information for fitting
+                should not look for this line higher than 'chan_high' channels.
+        '''
+        if chan_range is not None:
+            return chan_range
+
+        if energy is not None:
+            for accurate_energy in self.energies:
+                if round(energy, 0) == round(accurate_energy, 0):
+                    chan_low, chan_high = self.chan_range(accurate_energy)
+                    return accurate_energy, chan_low, chan_high
+
+        chan_low, chan_high = self.chan_range()
+        accurate_energy = self.default_energy
+        return accurate_energy, chan_low, chan_high
+
+
+    def chan_range(self, energy=None, gain_estimate=0.014,
+        lower_bound=100, upper_bound=9900, width=3000):
+        '''
+        Estimates the range, in channels, between which a line at the given
+        energy might be in a channel spectrum.
+
+        Keyword Arguments:
+            energy: number
+                The approximate energy of the spectral line in keV. Will
+                work as long as rounding both 'energy' and the actual energy
+                (as recorded in the 'all_energies' class attribute) to the 
+                ones place yeild the same number. If None, will default to the 
+                value stored in the 'default_energy' attribute.
+                (default: None)
+            gain_estimate: float
+                An estimate of the gain for the detector. Used to estimate the
+                recorded response of the line in channels. 
+                (energy in keV) / gain = (energy in channels)
+                (defautl: 0.014)
+            lower_bound: int
+                If either element of 'chan_range' is calculated to be below
+                'lower_bound', it will instead be set equal to 'lower_bound'.
+                (default: 100)
+            upper_bound: int
+                If either element of 'chan_range' is calculated to be above
+                'upper_bound', it will instead be set equal to 'upper_bound'.
+                (default: 9900)
+            width: int
+                The width of the interval specified by 'chan_range'.
+                (default: 3000)
+
+        Return: Tuple(int, int)
+            chan_low: int
+                Indicates that methods using this information for fitting
+                should not look for this line lower than 'chan_low' channels.
+            chan_high: int
+                Indicates that methods using this information for fitting
+                should not look for this line higher than 'chan_high' channels.
+        '''
+        if energy is None:
+            energy = self.default_energy
+
+        # Checking mainly for value errors that would screw up the chan_range.
+        check_positive(energy=energy, gain_estimate=gain_estimate)
+        check_channel(lower_bound=lower_bound, upper_bound=upper_bound, 
+            width=width)
+
+        # Calculating a preliminary channel range.
+        chan_central = energy / gain_estimate
+        chan_low = chan_central - (width / 2)
+        chan_high = chan_central + (width / 2)
+
+        # Correcting the range incase it is not within the bounds.
+        if chan_low  < lower_bound: chan_low  = lower_bound
+        if chan_high < lower_bound: chan_high = lower_bound
+        if chan_high > upper_bound: chan_high = upper_bound
+        if chan_low  > upper_bound: chan_low  = upper_bound
+
+        return int(chan_low), int(chan_high)
 
 
 class Experiment:
@@ -105,6 +236,9 @@ class Experiment:
     # A class attribute for removing letters from strings. Used in subclasses
     # when formatting units.
     numericize = str.maketrans('', '', string.ascii_letters)
+
+    # A class attribute indicating the dimensions of the detector being tested.
+    det_dim
 
     #
     # Small helper methods: 'title' and '_set_save_dir'.
@@ -1792,10 +1926,9 @@ class GammaFlood(Experiment):
             data and to construct new file names.
         detector: str
             The detector ID.
-        source: str
-            The X-ray source. Should correspond to the 'source' attribute 
-            of a 'Line' object. A dict of instantiated Line objects can be 
-            accessed by 'gamma.Line.lines'
+        source: a 'nudetect.Source' instance
+            The X-ray source. This supplies documentation of the source and
+            information about its spectral lines and fitting them.
         voltage: str
             Bias voltage in Volts
         temp: str
@@ -1843,10 +1976,9 @@ class GammaFlood(Experiment):
                 data and to construct new file names.
             detector: str
                 The detector ID.
-            source: str
-                The X-ray source. Should correspond to the 'source' attribute 
-                of a 'Line' object. A dict of instantiated Line objects can be 
-                accessed by 'gamma.Line.lines'
+            source: a 'nudetect.Source' instance
+                The X-ray source. This supplies documentation of the source and
+                information about its spectral lines and fitting them.
             voltage: str
                 Bias voltage in Volts
             temp: str
@@ -1878,13 +2010,8 @@ class GammaFlood(Experiment):
             etc: str
                 Any other important information to include
         '''
-        # Check that the source corresponds to a Line object.
-        if source not in Line.lines:
-            raise KeyError(f'''
-                There is no Line object corresponing to the source 
-                {self.source}. Print 'gamma.Line.lines.keys() for a list of 
-                valid 'source' values, or call 'help(Line)' to see how to 
-                define a new Line object.''')
+        if not isinstance(source, Source):
+            raise TypeError("'source' must be 'nudetect.Source' instance.")
 
         voltage = str(voltage)
         temp = str(temp)
@@ -1896,6 +2023,7 @@ class GammaFlood(Experiment):
         # Initialize data-based attributes to 'None'
         self.count_map = None
         self.gain = None
+        self.gain_dict = {}
         self.spectrum = None
 
         # Set user-supplied attributes
@@ -1909,27 +2037,6 @@ class GammaFlood(Experiment):
         self._set_save_dir(save_dir)
         self._set_save_dir(plot_dir, save_type='plot')
         self._set_save_dir(data_dir, save_type='data')
-
-
-    # Defining 'Line' instances for Am241 and Co57. Co57's 'chan_low' and 
-    # 'chan_high' attributes have not been tested.
-    am = Line('Am241', 59.54, chan_low=3000, chan_high=6000)
-    co = Line('Co57', 122.06, chan_low=5000, chan_high=8000)
-
-
-    #
-    # Small helper method: 'line'.
-    #
-
-    def line(self):
-        '''Returns the 'Line' instance to which 'self.source' corresponds.'''
-        try:
-            return Line.lines[self.source]
-        except KeyError:
-            raise KeyError(f'''
-                There is no Line object corresponing to the source 
-                {self.source}. Call 'help(Line)' to see how to define a new
-                Line object.''')
 
 
     #
@@ -2079,7 +2186,8 @@ class GammaFlood(Experiment):
         return count_map
 
 
-    def gen_quick_gain(self, line=None, fit_low=100, fit_high=200, 
+    def gen_quick_gain(self, energy=None, chan_range=None, gain_estimate=0.014,
+        search_width=3000, fit_below=100, fit_above=200, interpolations=2,
         save_plot=True, plot_dir='', plot_subdir='', plot_ext='.pdf', 
         save_data=True, data_dir='', data_subdir='', data_ext='.txt'):
         '''
@@ -2087,17 +2195,37 @@ class GammaFlood(Experiment):
         Currently, the fitting done might fail for sources other than Am241.
 
         Keyword Arguments:
-            line: an instance of Line
-                The attributes of 'line' will provide information for fitting.
-                If None, defaults to the value referenced by self.line().
+            energy: int
+                The approximate energy in keV of the line being fit. If None,
+                a the default value can be found in the 'default_energy'
+                attribute of the 'Source' instance being used, or in the dict
+                'Source.default_energies'.
                 (default: None)
-            fit_low: int
+            chan_range: Tuple(int, int)
+                Allows the user to manually specify the channels in between
+                which to look for the specral line. If None, it is calculated
+                using the 'Source.chan_range' method.
+                (default: None)
+            gain_estimate: float
+                An estimate of the gain for the detector. Used to estimate the
+                location of the spectral line in units of channels.
+                (energy in keV) / gain = (energy in channels)
+                (defautl: 0.014)
+            width: int
+                The width of the channel interval in which to search for the 
+                spectral line.
+                (default: 3000)
+            fit_below: int
                 Channels this far below the centroid won't be considered in 
                 fitting a gaussian to the spectral peak. Should be smaller 
-                than 'fit_high' due to thick low-energy tails.
-            fit_high: int
+                than 'fit_above' due to thick low-energy tails.
+            fit_above: int
                 Channels this far above the centroid won't be considered in 
                 fitting a gaussian to the spectral peak.
+            interpolations: int
+                The number of times to attempt interpolating gain for pixels
+                whose spectra couldn't be fit to a Gaussian.
+                (default: 2)
             save_plot: bool
                 If true, plots and energy spectrum for each pixel and saves
                 the figure.
@@ -2150,15 +2278,15 @@ class GammaFlood(Experiment):
 
         if save_data:
             data_path = self.construct_path('data', ext=data_ext, 
-                description='gain_data', save_dir=data_dir, subdir=data_subdir)
+                description='gain', save_dir=data_dir, subdir=data_subdir)
 
         if save_plot:
             plot_path = self.construct_path('plot', description='gain', 
                 ext=plot_ext,  save_dir=plot_dir, subdir=plot_subdir)
 
-        # If no line is passed, take it from the GammaFlood instance.
-        if line == None:
-            line = self.line()
+        energy, chan_low, chan_high = self.source.line(energy, 
+            chan_range=chan_range, gain_estimate=gain_estimate, 
+            width=search_width)
 
         # Get data from gamma flood FITS file
         with fits.open(self.raw_data_path) as file:
@@ -2191,12 +2319,12 @@ class GammaFlood(Experiment):
                     spectrum, edges = np.histogram(channel, bins=bins, 
                         range=(0, maxchannel))
                     # 'centroid' is the channel with the most counts in the 
-                    # interval between 'line.chan_low' and 'line.chan_high'.
-                    centroid = np.argmax(spectrum[line.chan_low:line.chan_high]
-                       ) + line.chan_low
+                    # interval between 'chan_low' and 'chan_high'.
+                    centroid = np.argmax(spectrum[chan_low:chan_high]
+                       ) + chan_low
                     # Excluding funky tails for the fitting process.
                     fit_channels = np.arange(
-                        centroid - fit_low, centroid + fit_high)
+                        centroid - fit_below, centroid + fit_above)
                     g_init = models.Gaussian1D(amplitude=spectrum[centroid], 
                         mean=centroid, stddev=75)
                     fit_g = fitting.LevMarLSQFitter()
@@ -2205,7 +2333,7 @@ class GammaFlood(Experiment):
                     # If we can determine the covariance matrix (which implies
                     # that the fit succeeded), then calculate this pixel's gain
                     if fit_g.fit_info['param_cov'] is not None:
-                        gain[row, col] = line.energy / g.mean
+                        gain[row, col] = energy / g.mean
                         # Plot each pixel's spectrum
                         if save_plot:
                             plt.figure()
@@ -2216,9 +2344,9 @@ class GammaFlood(Experiment):
                                 + np.square(g.fwhm * mean_err / g.mean))\
                             / g.mean
                             str_err = str(int(round(
-                                frac_err * line.energy * 1000)))
+                                frac_err * energy * 1000)))
                             str_fwhm = str(int(round(
-                                    line.energy * 1000 * g.fwhm / g.mean, 0)))
+                                    energy * 1000 * g.fwhm / g.mean, 0)))
                             plt.text(
                                 maxchannel * 3 / 5, spectrum[centroid] * 3 / 5,
                                 r'$\mathrm{FWHM}=$' + str_fwhm + r'$\pm$' 
@@ -2246,10 +2374,9 @@ class GammaFlood(Experiment):
 
         del RAWXmask, channel, data
 
-        # Interpolate gain for pixels where fit was unsuccessful. Do it twice 
-        # in case the first pass had insufficient data to interpolate 
-        # some pixels.
-        for _ in range(2):
+        # Interpolate gain for pixels where fit was unsuccessful. Do it
+        # multiple times if specified.
+        for _ in range(interpolations):
             newgain = np.zeros((34, 34))
             # Note that newgain's indices will be shifted over one from 'gain'.
             newgain[1:33, 1:33] = gain
@@ -2271,13 +2398,15 @@ class GammaFlood(Experiment):
             np.savetxt(data_path, gain)
 
         gain = np.ma.masked_values(gain, 0.0)
-        # Storing gain data in our 'GammaFlood' instance
         self.gain = gain
+        # TODO: keys strings for understandability or ints for programming
+        # convenience?
+        self.gain_dict[str(int(round(energy, 0))) + ' keV'] = gain
 
         return gain
 
 
-    def gen_spectrum(self, gain=None, line=None, bins=10000, 
+    def gen_spectrum(self, energy=None, gain=None, bins=10000, 
         energy_range=(0.01, 120), save_data=True, data_ext='.txt', 
         data_dir='', data_subdir=''):
         '''
@@ -2412,8 +2541,8 @@ class GammaFlood(Experiment):
     # Plotting method with light data analysis: 'plot_spectrum'.
     #
 
-    def plot_spectrum(self, spectrum=None, line=None, fit_low=80, fit_high=150,
-        title='', save_plot=True, plot_ext='.pdf', plot_dir='', 
+    def plot_spectrum(self, energy=None, spectrum=None, fit_below=80, 
+        fit_above=150, title='', save_plot=True, plot_ext='.pdf', plot_dir='', 
         plot_subdir=''):
         '''
         Fits and plots the spectrum returned from 'get_spectrum'. To show the 
@@ -2433,11 +2562,11 @@ class GammaFlood(Experiment):
                 The attributes of 'line' will provide information for fitting.
                 If None, defaults to the value referenced by self.line().
                 (default: None)
-            fit_low: int
+            fit_below: int
                 Channels this far below the centroid won't be considered in 
                 fitting a gaussian to the spectral peak. Should be smaller 
-                than 'fit_high' due to thick low-energy tails.
-            fit_high: int
+                than 'fit_above' due to thick low-energy tails.
+            fit_above: int
                 Channels this far above the centroid won't be considered in 
                 fitting a gaussian to the spectral peak.
             title: str
@@ -2490,7 +2619,7 @@ class GammaFlood(Experiment):
         centroid = np.argmax(spectrum[0, 1000:]) + 1000
         # Fit in an asymetrical domain about the centroid to avoid 
         # low energy tails.
-        fit_channels = np.arange(centroid - fit_low, centroid + fit_high)
+        fit_channels = np.arange(centroid - fit_below, centroid + fit_above)
         # Do the actual fitting.
         g_init = models.Gaussian1D(amplitude=spectrum[0, centroid], 
             mean=centroid, stddev=75)
