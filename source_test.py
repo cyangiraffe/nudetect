@@ -33,6 +33,7 @@ def test_csv_modification():
 
     s_csv_specific.set_default_source()
     assert s_csv_specific.slice_source_df()[1]['default source'] == True
+    assert nd.slice_source_df(1967)[1]['default source'] == False
 
     s_init.add_source()
     assert 1000 in list(Source.source_df.loc[:, 'CIT number'])
