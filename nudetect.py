@@ -199,27 +199,6 @@ def lara_to_df(filepath, energy_threshold=None):
 # These functions are for handling the CSV file containing information about
 # the detector lab's X-ray sources
 
-def source_from_csv(isotope=None, CIT_number=None, alias=None):
-    if CIT_number is not None or alias is not None:
-        series = slice_source_df(CIT_number, alias)[1]
-    elif isotope is not None:
-        df_bool = (Source.source_df.loc[:, 'isotope'] == isotope) &\
-            (Source.source_df.loc[:, 'default source'] == True)
-        series = Source.source_df.loc[df_bool].squeeze()
-
-    arg_dict = {}
-
-    for i in series.index:
-        if pd.isna(series.loc[i]):
-            arg_dict[i] = None
-        else:
-            arg_dict[i] = series[i]
-
-    return Source(arg_dict['isotope'], arg_dict['CIT number'], 
-        arg_dict['reference activity (mCi)'], arg_dict['reference date'], 
-        arg_dict['alias'], arg_dict['info'])
-
-
 def slice_source_df(CIT_number=None, alias=None):
     '''
     A helper method that returns the index of the row of 'source_df'
@@ -245,7 +224,7 @@ def slice_source_df(CIT_number=None, alias=None):
             The series representing the row of 'source_df' containing the
             CIT number or alias specified.
     '''
-    # Alias 'Source.source_df' for brevity
+    # Alias 'Source.source_df' for readability
     df = Source.source_df
 
     # Get the row refered to by the CIT_number or alias
@@ -567,6 +546,28 @@ class Source:
             '.lara.txt', energy_threshold=140)
 
 
+    @classmethod
+    def from_csv(self, isotope=None, CIT_number=None, alias=None):
+        if CIT_number is not None or alias is not None:
+            series = slice_source_df(CIT_number, alias)[1]
+        elif isotope is not None:
+            df_bool = (self.source_df.loc[:, 'isotope'] == isotope) &\
+                (self.source_df.loc[:, 'default source'] == True)
+            series = self.source_df.loc[df_bool].squeeze()
+
+        arg_dict = {}
+
+        for i in series.index:
+            if pd.isna(series.loc[i]):
+                arg_dict[i] = None
+            else:
+                arg_dict[i] = series[i]
+
+        return Source(arg_dict['isotope'], arg_dict['CIT number'], 
+            arg_dict['reference activity (mCi)'], arg_dict['reference date'], 
+            arg_dict['alias'], arg_dict['info'])
+
+
     #
     # Methods supplying useful information about this 'Source' instance. 
     #
@@ -808,6 +809,15 @@ class Experiment:
 
     # A class attribute indicating the dimensions of the detector being tested.
     det_dim = (32, 32)
+    # Shape of an array representing the detector pixels with a 1-pixel buffer
+    # around two edges.
+    det_dim_half_buff = (det_dim[0] + 1, det_dim[1] + 1)
+    # Shape of an array representing the detector pixels with a 1-pixel buffer
+    # around all edges.
+    det_dim_full_buff = (det_dim[0] + 2, det_dim[1] + 2)
+
+    # The number of sampling capacitors mediating the pixel readout
+    num_caps = 16
 
     #
     # Small helper methods: 'title' and '_set_save_dir'.
@@ -1600,10 +1610,13 @@ class Noise(Experiment):
 
         # Generating the save paths, if needed.
         if save_data:
-            fwhm_path = self.construct_path('data', ext=data_ext, 
+            fwhm_path = self.construct_path('data', ext='.npy', 
                 save_dir=data_dir, subdir=data_subdir, description='fwhm_data',
                 etc=etc)
-            count_path = self.construct_path('data', ext=data_ext, 
+            mu_path = self.construct_path('data', ext='.npy', 
+                save_dir=data_dir, subdir=data_subdir, description='mu_data',
+                etc=etc)
+            count_path = self.construct_path('data', ext='.npy', 
                 save_dir=data_dir, subdir=data_subdir, 
                 description='count_data', etc=etc)
 
@@ -1625,97 +1638,141 @@ class Noise(Experiment):
         maxchannel = 1000
         bins = np.arange(-maxchannel, maxchannel)
 
-        # Generate 'chan_map', a nested list representing a 33 x 33 array of 
-        # list, each of which contains all the trigger readings for its 
-        # corresponding pixel.
-        chan_map = [[[] for col in range(33)] for row in range(33)]
-        # Iterating through pixels
-        for col in range(32):
-            RAWXmask = np.array(data['RAWX']) == col
-            for row in range(32):
-                RAWYmask = np.array(data['RAWY']) == row
-                # Storing all readings for the current pixel in 'pulses'.
-                inds = np.nonzero(np.multiply(RAWXmask, RAWYmask))
-                pulses = data.field('PH_RAW')[inds]
-                for idx, pulse in enumerate(pulses):
-                    # If this pulse was triggered by the experiment (by a 
-                    # 'micro pulse'), then add the pulse data for the 3 x 3
-                    # pixel grid centered on the triggered pixel to the 
-                    # corresponding indices of 'chan_map'.
-                    if data['UP'][idx]:
-                        for i in range(9):
-                            mapcol = col + (i % 3) - 1
-                            maprow = row + (i // 3) - 1
-                            chan_map[maprow][mapcol].append(pulse[i])
+        # Shape of the arrays of processed data. For NuSTAR style detectors, 
+        # should be (16, 32, 32) for number of sampling capacitors along the 
+        # 0th axis and the detector dimensions along the 1st and 2nd axes.
+        processed_data_dim = (self.num_caps, self.det_dim[0], self.det_dim[1])
 
-        del data, mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
+        # Below, 'np.full' with 'nan' is used so that fitting parameters are
+        # left as nan if fitting fails.
 
-        # Generate a count map of micropulse-triggered events from 'chan_map'.
-        count_map = np.array(
-            [[len(chan_map[j][i]) for i in range(32)] for j in range(32)])
-        self.count_map = count_map
-       
-        # Generate a fwhm map of noise, and plot the gaussian fit to each 
-        # pixel's spectrum.
-        fwhm_map = np.full((32, 32), np.nan)
-        # Iterate through pixels
-        for row in range(32):
-            for col in range(32):
-                # If there were events at this pixel, bin them by channel
-                if chan_map[row][col]:
-                    # Binning events by channel
-                    spectrum, edges = np.histogram(chan_map[row][col], 
-                        bins=bins, range=(-maxchannel, maxchannel))
+        # Initilaizing map of FWHM values for the noise gaussian at each pixel 
+        # and starting capacitor.
+        fwhm_maps = np.full(processed_data_dim, np.nan)
+        # Initilaizing map of centroid values for the noise gaussian at each 
+        # pixel and starting capacitor.
+        mu_maps = np.full(processed_data_dim, np.nan)
+        # Initializing map of counts at each pixel and starting capacitor.
+        count_maps = np.empty(processed_data_dim)
 
-                    # Fitting the noise peak at/near zero channels
-                    fit_channels = edges[:-1]
-                    g_init = models.Gaussian1D(amplitude=np.max(spectrum), 
-                        mean=0, stddev=75)
-                    fit_g = fitting.LevMarLSQFitter()
-                    g = fit_g(g_init, fit_channels, spectrum)
+        # Initializing a DataFrame to store information about how the 
+        # fitting went for each pixel and starting capacitor.
+        index = None # TODO
 
-                    # Recording the gain-corrected FWHM data for this pixel
-                    # in fwhm_map.
-                    fwhm_map[row][col] = g.fwhm * gain[row][col]
-                    mu_map[row][col] = g.mean * gain[row][col]
-                    if save_plot:
-                        plt.hist(np.multiply(
-                                chan_map[row][col], gain[row][col]),
-                            bins=np.multiply(bins, gain[row][col]), 
-                            range=(-maxchannel * gain[row][col], 
-                                    maxchannel * gain[row][col]), 
-                            histtype='stepfilled')
+        fit_info = pd.DataFrame(
+            np.empty(self.num_caps * self.det_dim[0] * self.det_dim[1]),
+            columns=['row', 'col', 'scap', 'mu', 'mu_err', 'fwhm', 'fwhm_err'],
+            index=index)
 
-                        plt.plot(np.multiply(fit_channels, gain[row][col]), 
-                            g(fit_channels))
+        # Iterating through starting capacitor values
+        for scap in range(self.num_caps):
+            S_CAP_mask = np.array(data['S_CAP'] == scap)
+            # Generate 'chan_map', a nested list representing a 33 x 33 array 
+            # of lists, each of which contains all the trigger readings for 
+            # its corresponding pixel.
+            chan_map = [[[] 
+                for col in range(self.det_dim[1] + 1)] 
+                for row in range(self.det_dim[0] + 1)]
 
-                        plt.ylabel('Counts')
-                        if gain_bool:
-                            plt.xlabel('Energy (keV)')
-                        else:
-                            plt.xlabel('Channel')
+            # Iterating through pixels
+            for col in range(self.det_dim[1]):
+                RAWXmask = np.array(data['RAWX']) == col
+                for row in range(self.det_dim[0]):
+                    RAWYmask = np.array(data['RAWY']) == row
+                    # Storing all readings for the current pixel in 'pulses'.
+                    inds = np.nonzero(RAWXmask * RAWYmask * S_CAP_mask)
+                    pulses = data.field('PH_RAW')[inds]
+                    for idx, pulse in enumerate(pulses):
+                        # If this pulse was triggered by the experiment (by a 
+                        # 'micro pulse'), then add the pulse data for the 3 x 3
+                        # pixel grid centered on the triggered pixel to the 
+                        # corresponding indices of 'chan_map'.
+                        if data['UP'][idx]:
+                            for i in range(9):
+                                mapcol = col + (i % 3) - 1
+                                maprow = row + (i // 3) - 1
+                                chan_map[maprow][mapcol].append(pulse[i])
 
-                        plt.tight_layout()
-                        plt.savefig(plot_path.format(row, col))
-                        plt.close()
+            del mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
+
+            # Generate a count map of micropulse-triggered events from 
+            # 'chan_map' and insert it into the appropriate slice of the 
+            # 'count_maps' array
+            count_map = np.array([[len(chan_map[row][col]) 
+                for col in range(self.det_dim[1])] 
+                for row in range(self.det_dim[0])])
+            count_maps[scap] = count_map
+           
+            # Generate a fwhm map of noise, and plot the gaussian fit to each 
+            # pixel's spectrum.
+            
+            # Iterate through pixels
+            for row in range(self.det_dim[0]):
+                for col in range(self.det_dim[1]):
+                    # If there were events at this pixel, bin them by channel
+                    if chan_map[row][col]:
+                        # Binning events by channel
+                        spectrum, edges = np.histogram(chan_map[row][col], 
+                            bins=bins, range=(-maxchannel, maxchannel))
+
+                        # Fitting the noise peak at/near zero channels
+                        fit_channels = edges[:-1]
+                        g_init = models.Gaussian1D(amplitude=np.max(spectrum), 
+                            mean=0, stddev=75)
+                        fit_g = fitting.LevMarLSQFitter()
+                        g = fit_g(g_init, fit_channels, spectrum)
+
+                        # Recording the gain-corrected FWHM data for this pixel
+                        # in fwhm_map.
+                        fwhm_maps[scap, row, col] = g.fwhm * gain[row, col]
+                        mu_maps[scap, row, col]   = g.mean * gain[row, col]
+
+                        # 1 stardard deviation error for Gaussian parameters.
+                        sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
+                        fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
+                        mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
+
+                        # TODO: Populating a row of fit_info with fit information
+
+                        if save_plot:
+                            plt.hist(np.multiply(
+                                    chan_map[row][col], gain[row, col]),
+                                bins=np.multiply(bins, gain[row, col]), 
+                                range=(-maxchannel * gain[row, col], 
+                                        maxchannel * gain[row, col]), 
+                                histtype='stepfilled')
+
+                            plt.plot(np.multiply(fit_channels, gain[row, col]),
+                                g(fit_channels))
+
+                            plt.ylabel('Counts')
+                            if gain_bool:
+                                plt.xlabel('Energy (keV)')
+                            else:
+                                plt.xlabel('Channel')
+
+                            plt.tight_layout()
+                            plt.savefig(plot_path.format(row, col))
+                            plt.close()
         
 
         # Mask large values, taking into account whether fwhm is in units
         # of channels or of keV.
         if gain_bool:
-            fwhm_map = np.ma.masked_where(fwhm_map > 5, fwhm_map)
+            fwhm_maps = np.ma.masked_where(fwhm_map > 5, fwhm_map)
         else:
-            fwhm_map = np.ma.masked_where(fwhm_map > 400, fwhm_map)
+            fwhm_maps = np.ma.masked_where(fwhm_map > 400, fwhm_map)
 
-        self._fwhm_map = fwhm_map
-        self._mu_map = mu_map
-        # Set '_gain_corrected' way down here to make sure the 'fwhm_map'
-        # attribute was successfully set.
+        self._fwhm_maps = fwhm_maps
+        self._mu_maps = mu_maps
+        # Set '_gain_corrected' way down here to make sure the maps of 
+        # FWHM and mu were successfully generated.
         self._gain_corrected = gain_bool
 
         if save_data:
-            np.savetxt(fwhm_path, fwhm_map)
-            np.savetxt(count_path, count_map)
+            np.save(fwhm_path, fwhm_maps)
+            np.save(mu_path, mu_maps)
+            np.save(count_path, count_maps)
 
         return fwhm_map, count_map
 
@@ -2837,12 +2894,12 @@ class GammaFlood(Experiment):
 
         maxchannel = 10000
         bins = np.arange(1, maxchannel)
-        gain = np.zeros((32, 32))
+        gain = np.zeros(self.det_dim)
 
         # Iterating through pixels
-        for col in range(32):
+        for col in range(self.det_dim[1]):
             RAWXmask = data.field('RAWX') == col
-            for row in range(32):
+            for row in range(self.det_dim[0]):
                 RAWYmask = data.field('RAWY') == row
 
                 # Getting peak height in 'channels' for all events for the 
@@ -2915,9 +2972,10 @@ class GammaFlood(Experiment):
         # Interpolate gain for pixels where fit was unsuccessful. Do it
         # multiple times if specified.
         for _ in range(interpolations):
-            newgain = np.zeros((34, 34))
+            newgain = np.zeros(self.det_dim_full_buff)
             # Note that newgain's indices will be shifted over one from 'gain'.
-            newgain[1:33, 1:33] = gain
+            newgain[1:self.det_dim[0] + 1,
+                    1:self.det_dim[1] + 1] = gain
             # 'empty' contains indices at which the fit was unsuccessful
             empty = np.transpose(np.nonzero(gain == 0.0))
             # Iterating through pixels with failed fitting.
@@ -3001,7 +3059,7 @@ class GammaFlood(Experiment):
 
         # Adding a buffer of zeros around the 'gain' array. (Note that the
         # indices will now be shifted over by one.)
-        gain_buffed = np.zeros((34, 34))
+        gain_buffed = np.zeros(self.det_dim_full_buff)
         gain_buffed[1:33, 1:33] = gain
         gain = gain_buffed
 

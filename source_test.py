@@ -8,9 +8,9 @@ import pandas as pd
 s_init = Source('Co57', 1000, 10.0, '2-10-1999', 
     info='initialized using the default constructor')
 
-s_csv_default = nd.source_from_csv('Am241')
+s_csv_default = Source.from_csv('Am241')
 
-s_csv_specific = nd.source_from_csv(CIT_number=2037)
+s_csv_specific = Source.from_csv(CIT_number=2037)
 
 # Testing the returns of the instance methods
 def test_instance_methods():
