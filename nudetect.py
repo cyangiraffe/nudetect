@@ -548,6 +548,33 @@ class Source:
 
     @classmethod
     def from_csv(self, isotope=None, CIT_number=None, alias=None):
+        '''
+        Initializes a 'Source' object from the CSV file logging X-ray sources
+        pointed to by the 'source_csv_path' class attribute. 
+
+        If the 'CIT_number' is specified, the source with that CIT number will be used, no matter what other parameters were passed. 
+
+        If 'alias' is specified but not 'CIT_number', the source with that alias will be used, regardless of the value of 'isotope'. 
+
+        If only the 'isotope' kwarg is specified, the default source of that isotope will be used, if a default exists. 
+
+        Keyword Arguments:
+            isotope: str
+                The isotope name, in the form '{element symbol}{mass number}'. 
+                For example, 'Am241'.
+                (default: None)
+            CIT_number: int
+                The CIT number of the source
+                (default: None)
+            alias: str
+                A short string uniquely identifying the source used. Nice for
+                switching between sources without memorizing CIT numbers. For 
+                example, the alias for an Am241 source whose container filters 
+                out some low energy radiation might be 'Am filtered'
+                (default: None)
+        
+        Return: A 'Source' instance
+        '''
         if CIT_number is not None or alias is not None:
             series = slice_source_df(CIT_number, alias)[1]
         elif isotope is not None:
