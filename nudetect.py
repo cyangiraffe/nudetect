@@ -24,39 +24,13 @@ import numpy as np
 import pandas as pd
 from astropy.io import fits
 from astropy.modeling import models, fitting
+from astropy.table import Table
 import astropy.io.ascii as asciio
 
 # Plotting packages
 import matplotlib.pyplot as plt
 import matplotlib.cm # color map
 
-
-##
-## Miscellaneous helper functions that the user may also find useful.
-##
-
-def load_fits_data(filepath, pos=None, slice_temp=True):
-    '''
-    Loads and slices out good data from a FITS file of detector test data.
-    '''
-    # Get data from FITS file
-    with fits.open(filepath) as file:
-        data = file[1].data
-
-    mask = np.ones(data.size, dtype=bool)
-
-    # 'start' and 'end' denote the indices between which 'data['TEMP']'
-    # takes on a resonable value. start is the first index with a 
-    # temperature greater than -20 C, and end is the last such index.
-    if slice_temp:
-        mask *= data['TEMP'] > -20
-    if pos is not None:
-        mask *= data['DET_ID'] == pos
-
-    start = np.argmax(mask)
-    end = len(mask) - np.argmax(mask[::-1])
-
-    return data[start:end]
 
 
 ##
@@ -125,6 +99,68 @@ def check_isotope_format(isotope):
     if isotope[0] not in string.ascii_uppercase:
         return isotope[0].upper() + isotope[1:]
     return isotope
+
+
+##
+## Miscellaneous helper functions that the user may also find useful.
+##
+
+def load_fits_data(filepath, pos=None, slice_temp=True, colnames=None):
+    '''
+    Loads and slices out good data from a FITS file of detector test data.
+    '''
+    # Call this up here so that if an exception is raised, it's before
+    # the time-expensive part of this function.
+    if colnames is not None:
+        colnames = to_set(colnames)
+
+    # Get data from FITS file (this line takes a long time to run)
+    table = Table.read(filepath)
+
+    # If 'colnames' was not specified, assign it to the set of 
+    # all column names in the table.
+    if colnames is None:
+        colnames = set(table.colnames)
+
+    one_dim_col_names = []
+    multi_dim_col_names = []
+
+    for colname in table.colnames:
+        if colname in colnames:
+            if len(table[colname].shape) == 1:
+                one_dim_col_names.append(colname)
+            else:
+                multi_dim_col_names.append(colname)
+
+    if one_dim_col_names:
+        one_dim_cols = table[one_dim_col_names]
+        one_dim_df = one_dim_cols.to_pandas()
+    else:
+        one_dim_cols = None
+
+    if multi_dim_col_names:
+        dict_of_cols = table[multi_dim_col_names].columns
+        multi_dim_cols = {}
+        for colname, col in dict_of_cols.items():
+            # This line doesn't work. Need another way. TODO
+            multi_dim_cols[colname] = col.to_pandas()
+
+
+
+    mask = np.ones(data.size, dtype=bool)
+
+    # 'start' and 'end' denote the indices between which 'data['TEMP']'
+    # takes on a resonable value. start is the first index with a 
+    # temperature greater than -20 C, and end is the last such index.
+    if slice_temp:
+        mask *= data['TEMP'] > -20
+    if pos is not None:
+        mask *= data['DET_ID'] == pos
+
+    start = np.argmax(mask)
+    end = len(mask) - np.argmax(mask[::-1])
+
+    return data[start:end]
 
 
 ##
@@ -852,14 +888,14 @@ class Experiment:
 
     _full_num_rows = 32
     _full_num_cols = 32
-    _full_det_shape = (_num_rows, _num_cols)
+    _full_det_shape = (_full_num_rows, _full_num_cols)
     # Shape of an array representing the detector pixels with a 1 pixel width
     # buffer around all edges.
-    _full_det_shape_buff = (_num_rows + 2, _num_cols + 2)
+    _full_det_shape_buff = (_full_num_rows + 2, _full_num_cols + 2)
 
     # Iterator (range) objects for iterating through rows and columns.
-    _full_row_iter = range(_num_rows)
-    _full_col_iter = range(_num_cols)
+    _full_row_iter = range(_full_num_rows)
+    _full_col_iter = range(_full_num_cols)
 
     _full_start_row = 0
     _full_start_col = 0
@@ -1846,15 +1882,15 @@ class Noise(Experiment):
             np.empty((np.prod(output_shape), len(columns))),
             columns=columns, index=index)
 
-            # Generate 'chan_map', a nested list representing an array 
-            # of lists, each of which contains all the trigger readings for 
-            # its corresponding pixel. The shape of the 'array' of lists
-            # is the detector region's shape with a buffer around it. The
-            # thickness of this buffer is calculated below and now that 
-            # I look at it I'm actually not sure if this works. TODO
-            chan_map = [[[] 
-                for col in range(self._num_cols + (3 - self._num_cols) % 3)] 
-                for row in range(self._num_rows + (3 - self._num_rows) % 3)]
+        # Generate 'chan_map', a nested list representing an array 
+        # of lists, each of which contains all the trigger readings for 
+        # its corresponding pixel. The shape of the 'array' of lists
+        # is the detector region's shape with a buffer around it. The
+        # thickness of this buffer is calculated below and now that 
+        # I look at it I'm actually not sure if this works. TODO
+        chan_map = [[[] 
+            for col in range(self._num_cols + (3 - self._num_cols) % 3)] 
+            for row in range(self._num_rows + (3 - self._num_rows) % 3)]
 
         # Iterating through pixels
         for col in self._col_iter:
@@ -2271,9 +2307,11 @@ class Noise(Experiment):
     def gain_correct_fwhm(self, gain=None, save_data=True, data_dir='', 
         data_subdir='', data_ext='.txt'):
         '''
-        Apply gain corrections to processed noise data, if generated without gain correction.
+        Apply gain corrections to processed noise data, if generated without 
+        gain correction.
         '''
         pass
+
 
 class Leakage(Experiment):
     '''
