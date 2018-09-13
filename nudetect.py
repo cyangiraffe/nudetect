@@ -1681,75 +1681,7 @@ class Noise(Experiment):
     # 'gen_full_noise'.
     #
 
-    def gen_quick_noise(self, gain=None, save_plot=False, plot_dir='', 
-        plot_subdir='',plot_ext='.pdf', save_data=True, data_dir='', 
-        data_subdir='', data_ext='.txt'):
-        '''
-        Calculates the noise FWHM for each pixel and generates a noise count
-        map. Also plots a noise spectrum for each pixel.
-
-        Keyword Arguments:
-            gain: 2D numpy.ndarray
-                A 32 x 32 array of floats. Each entry represents its  
-                respective pixel's gain, where channels * gain = energy. If 
-                None, defaults to the array in 'self.gain'.
-                (default: None)
-            save_plot: bool
-                If true, plots and energy spectrum for each pixel and saves
-                the figure.
-                (default: True)
-            plot_dir: str
-                The directory to which the file will be saved, overriding any
-                path specified in the 'save_dir' attribute. If an empty string,
-                will default to the attribute 'save_dir'.
-                If the string passed to 'plot_dir' has an empty pair of curly 
-                braces '{}', they will be replaced by the detector ID 
-                'self.detector'. For example, if self.detector == 'H100' and 
-                plot_dir == 'figures/{}/pixels', then the directory that 
-                'save_path' points to is 'figures/H100/pixels'.
-                (default: '')
-            plot_subdir: str
-                A path to a sub-directory of 'plot_dir' to which the file will
-                be saved. Empty curly braces '{}' are formatted the same way
-                as in 'plot_dir'. 
-                (default: '')
-            plot_ext: str
-                The file name extension for the plot file.
-                (default: '.pdf')  
-            save_data: bool 
-                If True, saves gain data as an ascii file.
-                (default: True)
-            data_dir: str
-                The directory to which the file will be saved, overriding any
-                path specified in the 'save_dir' attribute. If an empty string,
-                will default to the attribute 'save_dir'.
-                If the string passed to 'data_dir' has an empty pair of curly 
-                braces '{}', they will be replaced by the detector ID 
-                'self.detector'. For example, if self.detector == 'H100' and 
-                data_dir == 'figures/{}/pixels', then the directory that 
-                'save_path' points to is 'figures/H100/pixels'.
-                (default: '')
-            data_subdir: str
-                A path to a sub-directory of 'data_dir' to which the file will
-                be saved. Empty curly braces '{}' are formatted the same way
-                as in 'data_dir'. 
-                (default: '')
-            data_ext: str
-                The file name extension for the noise map data files. 
-                (default: '.txt')
-
-        Return: tuple(numpy.ndarray, numpy.ndarray)
-            fwhm_map: 2D numpy.ndarray
-                A 32 x 32 array with the fwhm of the gaussian fit to the noise
-                data collected at the corresponding pixel.
-            count_map: 2D numpy.ndarray
-                A 32 x 32 array with the number of events collected during the 
-                noise test at each corresponding pixel.
-        '''
-        pass
-
-
-    def gen_full_noise(self, gain=None, save_plot=False, plot_dir='', 
+    def gen_quick_noise(self, gain=None, save_plot=True, plot_dir='', 
         plot_subdir='', plot_ext='.pdf', save_data=True, data_dir='', 
         data_subdir='', data_ext='.txt'):
         '''
@@ -1813,13 +1745,28 @@ class Noise(Experiment):
                 The file name extension for the noise map data files. 
                 (default: '.txt')
 
-        Return: tuple(numpy.ndarray, numpy.ndarray)
-            fwhm_map: 2D numpy.ndarray
-                A 32 x 32 array with the fwhm of the gaussian fit to the noise
-                data collected at the corresponding pixel.
-            count_map: 2D numpy.ndarray
-                A 32 x 32 array with the number of events collected during the 
-                noise test at each corresponding pixel.
+        Return:
+            fit_data: pandas.DataFrame
+                A MultiIndexed DataFrame containing the mean and FWHM of each
+                Gaussian fit and their errors. Intended to help spot when
+                fitting has gone poorly. 
+
+                Columns:
+                    'mean', 'mean error', 'fwhm', 'fwhm error'
+                Index:
+                    ('pixel row', 'pixel col')
+
+                For example, to get the mean of the gaussian fit at the pixel 
+                in row 10, column 11 (i.e., RAWY = 10, RAWX = 11), 
+                one would type:
+
+                >>> fit_data.loc[(10, 11), 'mean']
+
+                For more, check out the pandas documentation for MultiIndexing
+                at http://pandas.pydata.org/pandas-docs/stable/advanced.html
+                and look at the MultiIndex heirarchy itself using
+
+                >>> fit_data.index
         '''
         # 'etc' and 'etc_plot' will be appended to file names, denoting  
         # whether data/plots were gain-corrected.
@@ -1838,18 +1785,306 @@ class Noise(Experiment):
 
         # Generating the save paths, if needed.
         if save_data:
+            fwhm_path = self.construct_path('data', ext=data_ext, 
+                save_dir=data_dir, subdir=data_subdir, description='quick_fwhm_data',
+                etc=etc)
+            mean_path = self.construct_path('data', ext=data_ext, 
+                save_dir=data_dir, subdir=data_subdir, description='quick_mean_data',
+                etc=etc)
+            count_path = self.construct_path('data', ext=data_ext, 
+                save_dir=data_dir, subdir=data_subdir, 
+                description='quick_count_data', etc=etc)
+            fit_data_path = self.construct_path('data', ext='.csv', 
+                save_dir=data_dir, subdir=data_subdir, 
+                description='quick_fit_data', etc=etc)
+
+        if save_plot:
+            plot_path = self.construct_path('plot', save_dir=plot_dir, 
+                etc=etc_plot, subdir=plot_subdir, description='pix_spectrum', 
+                ext=plot_ext)
+
+        # Get data from noise FITS file
+        data = load_fits_data(self.raw_data_path, self.pos)
+
+        if not gain_bool:
+            gain = np.ones(self._det_shape)
+        # If gain data is not passed directly as a parameter, but is an 
+        # attribute of this instance, use the attribute's gain data.
+        elif gain is None:
+            gain = self.gain
+
+        # If we are not analyzing the full detector but are given gain data
+        # for the full detector, slice out only the necessary gain data.
+        if not self.full_detector and gain.shape == self._full_det_shape:
+            gain = gain[self._row_slice, self._col_slice]
+
+        maxchannel = 1000
+        bins = np.arange(-maxchannel, maxchannel)
+
+        # Shape of the arrays of processed data. For NuSTAR style detectors, 
+        # should be (32, 32).
+        output_shape = (self._num_rows, self._num_cols)
+
+        # Below, 'np.full' with 'nan' is used so that fitting parameters are
+        # left as nan if fitting fails.
+
+        # Initilaizing pixel map of FWHM values
+        fwhm_map = np.full(output_shape, np.nan)
+        # Initilaizing pixel map of centroid values
+        mean_map = np.full(output_shape, np.nan)
+        # Initializing pixel map of counts
+        count_map = np.empty(output_shape)
+
+        # Initializing a DataFrame to store information about how the 
+        # fitting went for each pixel.
+        index = pd.MultiIndex.from_product([self._row_iter, self._col_iter],
+            names=['pixel row', 'pixel col'])
+
+        columns = ['mean', 'mean error', 'fwhm', 'fwhm error']
+
+        fit_data = pd.DataFrame(
+            np.empty((np.prod(output_shape), len(columns))),
+            columns=columns, index=index)
+
+            # Generate 'chan_map', a nested list representing an array 
+            # of lists, each of which contains all the trigger readings for 
+            # its corresponding pixel. The shape of the 'array' of lists
+            # is the detector region's shape with a buffer around it. The
+            # thickness of this buffer is calculated below and now that 
+            # I look at it I'm actually not sure if this works. TODO
+            chan_map = [[[] 
+                for col in range(self._num_cols + (3 - self._num_cols) % 3)] 
+                for row in range(self._num_rows + (3 - self._num_rows) % 3)]
+
+        # Iterating through pixels
+        for col in self._col_iter:
+            RAWXmask = np.array(data['RAWX']) == col
+            for row in self._row_iter:
+                RAWYmask = np.array(data['RAWY']) == row
+                # Storing all readings for the current pixel in 'pulses'.
+                inds = np.nonzero(RAWXmask * RAWYmask)
+                pulses = data.field('PH_RAW')[inds]
+                for idx, pulse in enumerate(pulses):
+                    # If this pulse was triggered by the experiment (by a 
+                    # 'micro pulse'), then add the pulse data for the 3 x 3
+                    # pixel grid centered on the triggered pixel to the 
+                    # corresponding indices of 'chan_map'.
+                    if data['UP'][idx]:
+                        for i in range(9):
+                            mapcol = (col - self._start_col) + (i % 3) - 1
+                            maprow = (row - self._start_row) + (i // 3) - 1
+                            chan_map[maprow][mapcol].append(pulse[i])
+
+        del mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
+
+        # Generate a count map of micropulse-triggered events from 
+        # 'chan_map'.
+        count_map = np.array([[len(chan_map[row][col]) 
+            for col in range(self._num_cols)] 
+            for row in range(self._num_rows)])
+       
+        # Generate a fwhm map of noise, and plot the gaussian fit to each 
+        # pixel's spectrum.
+        
+        # Iterate through elements of chan_map
+        for row in range(self._num_rows):
+            for col in range(self._num_cols):
+                # If there were events at this pixel, bin them by channel
+                if chan_map[row][col]:
+                    # Binning events by channel
+                    spectrum, edges = np.histogram(chan_map[row][col], 
+                        bins=bins, range=(-maxchannel, maxchannel))
+
+                    # Fitting the noise peak at/near zero channels
+                    fit_channels = edges[:-1]
+                    g_init = models.Gaussian1D(amplitude=np.max(spectrum), 
+                        mean=0, stddev=75)
+                    fit_g = fitting.LevMarLSQFitter()
+                    g = fit_g(g_init, fit_channels, spectrum)
+
+                    # Recording the gain-corrected FWHM and mean data
+                    # for this pixel in the corresponding arrays.
+                    fwhm_map[row, col] = np.multiply(
+                        g.fwhm, gain[row, col])
+
+                    mean_map[row, col] = np.multiply(
+                        g.mean, gain[row, col])
+
+                    # 1 stardard deviation error for Gaussian parameters.
+                    sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
+                    fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
+                    mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
+
+                    # Populating a row of fit_data with fit information
+                    df_row = [g.mean, mean_err, g.fwhm, fwhm_err]
+                    fit_data.loc[(row, col)] = df_row
+
+                    if save_plot:
+                        plt.hist(np.multiply(
+                                chan_map[row][col], gain[row, col]),
+                            bins=np.multiply(bins, gain[row, col]), 
+                            range=(-maxchannel * gain[row, col], 
+                                    maxchannel * gain[row, col]), 
+                            histtype='stepfilled')
+
+                        plt.plot(np.multiply(fit_channels, gain[row, col]),
+                            g(fit_channels))
+
+                        plt.ylabel('Counts')
+                        if gain_bool:
+                            plt.xlabel('Energy (keV)')
+                        else:
+                            plt.xlabel('Channel')
+
+                        plt.tight_layout()
+                        plt.savefig(plot_path.format(row, col))
+                        plt.close()
+        
+
+        # Mask large values, taking into account whether fwhm is in units
+        # of channels or of keV.
+        if gain_bool:
+            fwhm_map = np.ma.masked_where(fwhm_map > 5, fwhm_map)
+        else:
+            fwhm_map = np.ma.masked_where(fwhm_map > 400, fwhm_map)
+
+        self._fwhm_map = fwhm_map
+        self._mean_map = mean_map
+        self._quick_fit_data = fit_data
+        # Set '_gain_corrected' way down here to make sure the maps of 
+        # FWHM and mean were successfully generated.
+        self._gain_corrected = gain_bool
+
+        if save_data:
+            np.save(fwhm_path, fwhm_map)
+            np.save(mean_path, mean_map)
+            np.save(count_path, count_map)
+            fit_data.to_csv(fit_data_path)
+
+        return fit_data
+
+
+    def gen_full_noise(self, gain=None, save_plot=False, plot_dir='', 
+        plot_subdir='', plot_ext='.pdf', save_data=True, data_dir='', 
+        data_subdir=''):
+        '''
+        For each combination of pixel coordinates and starting capacitor,
+        plots a spectrum of the noise and fits it with a Gaussian. The 
+        mean and FWHM of this Gaussian are recorded. A count map is also 
+        generated.
+
+        This method can be called with or without gain correction. It will
+        try to find gain data stored in the 'Noise' instance if no gain
+        data is supplied via the 'gain' parameter. If no gain data is found,
+        it will give outputs in units of channels.
+
+        Keyword Arguments:
+            gain: 2D numpy.ndarray
+                A 32 x 32 array of floats. Each entry represents its  
+                respective pixel's gain, where channels * gain = energy. If 
+                None, defaults to the array in 'self.gain'.
+                (default: None)
+            save_plot: bool
+                If true, plots and energy spectrum for each pixel and saves
+                the figure.
+                (default: False)
+            plot_dir: str
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'plot_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                plot_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            plot_subdir: str
+                A path to a sub-directory of 'plot_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'plot_dir'. 
+                (default: '')
+            plot_ext: str
+                The file name extension for the plot file.
+                (default: '.pdf')  
+            save_data: bool 
+                If True, saves gain data as an ascii file.
+                (default: True)
+            data_dir: str
+                The directory to which the file will be saved, overriding any
+                path specified in the 'save_dir' attribute. If an empty string,
+                will default to the attribute 'save_dir'.
+                If the string passed to 'data_dir' has an empty pair of curly 
+                braces '{}', they will be replaced by the detector ID 
+                'self.detector'. For example, if self.detector == 'H100' and 
+                data_dir == 'figures/{}/pixels', then the directory that 
+                'save_path' points to is 'figures/H100/pixels'.
+                (default: '')
+            data_subdir: str
+                A path to a sub-directory of 'data_dir' to which the file will
+                be saved. Empty curly braces '{}' are formatted the same way
+                as in 'data_dir'. 
+                (default: '')
+
+        Return:
+            fit_data: pandas.DataFrame
+                A MultiIndexed DataFrame containing the mean and FWHM of each
+                Gaussian fit and their errors. Intended to help spot when
+                fitting has gone poorly. 
+
+                Columns:
+                    'mean', 'mean error', 'fwhm', 'fwhm error'
+                Index:
+                    ('start cap', 'pixel row', 'pixel col')
+
+                For example, to get the mean of the gaussian fit to the 4th 
+                starting capactior at the pixel in row 10, column 11 
+                (i.e., RAWY = 10, RAWX = 11), one would type:
+
+                >>> fit_data.loc[(4, 10, 11), 'mean']
+
+                All columns with data for starting capacitor 4 only would be:
+
+                >>> fit_data.loc[4]
+
+                All columns with data for the pixel at row 10, column 11:
+
+                >>> fit_data.xs((10, 11), level=('pixel row', 'pixel col'))
+
+                For more, check out the pandas documentation for MultiIndexing
+                at http://pandas.pydata.org/pandas-docs/stable/advanced.html
+                and look at the MultiIndex heirarchy itself using
+
+                >>> fit_data.index
+        '''
+        # 'etc' and 'etc_plot' will be appended to file names, denoting  
+        # whether data/plots were gain-corrected.
+        gain_bool = (self.gain is not None) or (gain is not None)
+        if gain_bool:
+            etc = 'gain'
+        else:
+            etc = 'nogain'
+
+        # Check if gain data was supplied for the whole detector or just
+        # the region being analyzed, if necessary.
+
+        # 'etc_plot' will be formatted to have pixel coordinates, since a
+        # spectrum is plotted for each pixel.
+        etc_plot = etc + '_x{}_y{}_scap{}'
+
+        # Generating the save paths, if needed.
+        if save_data:
             fwhm_path = self.construct_path('data', ext='.npy', 
-                save_dir=data_dir, subdir=data_subdir, description='fwhm_data',
+                save_dir=data_dir, subdir=data_subdir, description='full_fwhm_data',
                 etc=etc)
             mean_path = self.construct_path('data', ext='.npy', 
-                save_dir=data_dir, subdir=data_subdir, description='mean_data',
+                save_dir=data_dir, subdir=data_subdir, description='full_mean_data',
                 etc=etc)
             count_path = self.construct_path('data', ext='.npy', 
                 save_dir=data_dir, subdir=data_subdir, 
-                description='count_data', etc=etc)
+                description='full_count_data', etc=etc)
             fit_data_path = self.construct_path('data', ext='.csv', 
                 save_dir=data_dir, subdir=data_subdir, 
-                description='fit_data', etc=etc)
+                description='full_fit_data', etc=etc)
 
         if save_plot:
             plot_path = self.construct_path('plot', save_dir=plot_dir, 
@@ -2006,7 +2241,7 @@ class Noise(Experiment):
                                 plt.xlabel('Channel')
 
                             plt.tight_layout()
-                            plt.savefig(plot_path.format(row, col))
+                            plt.savefig(plot_path.format(row, col, start_cap))
                             plt.close()
         
 
@@ -2019,6 +2254,7 @@ class Noise(Experiment):
 
         self._fwhm_maps = fwhm_maps
         self._mean_maps = mean_maps
+        self._full_fit_data = fit_data
         # Set '_gain_corrected' way down here to make sure the maps of 
         # FWHM and mean were successfully generated.
         self._gain_corrected = gain_bool
