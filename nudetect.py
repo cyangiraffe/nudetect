@@ -105,62 +105,110 @@ def check_isotope_format(isotope):
 ## Miscellaneous helper functions that the user may also find useful.
 ##
 
-def load_fits_data(filepath, pos=None, slice_temp=True, colnames=None):
+def fits_to_df(filepath, colnames, pos=None, temp_threshold=-20,
+    swap_byte_order=True):
     '''
     Loads and slices out good data from a FITS file of detector test data.
     '''
+
+    #
+    # Trim out any columns and rows of the table that we don't need. Doing
+    # this early reduces the RAM used later on and makes things faster.
+    #
+
     # Call this up here so that if an exception is raised, it's before
     # the time-expensive part of this function.
-    if colnames is not None:
+    if colnames != 'all':
         colnames = to_set(colnames)
+
+    original_colnames = colnames
+
+    # Add in temperature and position data, since we'll need them for trimming
+    # out unnecessary rows of the table later.
+    if temp_threshold is not None:
+        colnames.add('TEMP')
+    if pos is not None:
+        colnames.add('DET_ID')
 
     # Get data from FITS file (this line takes a long time to run)
     table = Table.read(filepath)
 
+    all_names = set(table.colnames)
+
     # If 'colnames' was not specified, assign it to the set of 
     # all column names in the table.
     if colnames is None:
-        colnames = set(table.colnames)
+        colnames = all_names
 
-    one_dim_col_names = []
-    multi_dim_col_names = []
+    # Remove any columns not in 'colnames'. Doing this early lowers
+    # RAM usage, which may be vital with big tables.
+    excluded_colnames = all_names - colnames
+    table.remove_columns(excluded_colnames)
 
-    for colname in table.colnames:
-        if colname in colnames:
-            if len(table[colname].shape) == 1:
-                one_dim_col_names.append(colname)
-            else:
-                multi_dim_col_names.append(colname)
+    col_length = table['TEMP'].shape[0]
 
-    if one_dim_col_names:
-        one_dim_cols = table[one_dim_col_names]
-        one_dim_df = one_dim_cols.to_pandas()
-    else:
-        one_dim_cols = None
+    mask = np.ones(col_length, dtype=bool)
 
-    if multi_dim_col_names:
-        dict_of_cols = table[multi_dim_col_names].columns
-        multi_dim_cols = {}
-        for colname, col in dict_of_cols.items():
-            # This line doesn't work. Need another way. TODO
-            multi_dim_cols[colname] = col.to_pandas()
-
-
-
-    mask = np.ones(data.size, dtype=bool)
-
-    # 'start' and 'end' denote the indices between which 'data['TEMP']'
+    # 'start' and 'end' denote the indices between which 'table['TEMP']'
     # takes on a resonable value. start is the first index with a 
     # temperature greater than -20 C, and end is the last such index.
-    if slice_temp:
-        mask *= data['TEMP'] > -20
+    if temp_threshold is not None:
+        mask *= table['TEMP'] > temp_threshold
     if pos is not None:
-        mask *= data['DET_ID'] == pos
+        mask *= table['DET_ID'] == pos
 
     start = np.argmax(mask)
     end = len(mask) - np.argmax(mask[::-1])
+    del mask
 
-    return data[start:end]
+    table.remove_rows(slice(0, start))
+    table.remove_rows(slice(end, col_length))
+
+    # Remove 'TEMP' and 'DET_ID' columns if they weren't requested.
+    table.remove_columns(colnames - original_colnames)
+
+
+    #
+    # Convert our data table to a pandas.DataFrame. DataFrames should be faster
+    # than astropy Tables for indexing/scalar value access.
+    #
+
+    # These lists will divide columns by their dimensionality. One dimensional
+    # columns (i.e, a column of scalars) can be converted directly to a pandas
+    # DataFrame via the 'to_pandas' method of astropy.table.Table. 
+    one_dim_col_names = []
+    two_dim_col_names = []
+
+    for colname in table.colnames:
+        if len(table[colname].shape) == 1:
+            one_dim_col_names.append(colname)
+        else:
+            two_dim_col_names.append(colname)
+
+    # If any one dimensional columns were requested, convert them all to a
+    # single pandas.DataFrame called 'one_dim_df'.
+    if one_dim_col_names:
+        one_dim_df = table[one_dim_col_names].to_pandas()
+        table.remove_columns(one_dim_col_names)
+    else:
+        one_dim_df = None
+
+    # If any two dimensional columns were requested, convert them all to a
+    # dict of pandas.DataFrames, one DataFrame for
+    if two_dim_col_names:
+        dict_of_cols = table[two_dim_col_names].columns
+        two_dim_dfs = {}
+        for colname, col in dict_of_cols.items():
+            if swap_byte_order:
+                two_dim_dfs[colname] = pd.DataFrame(
+                    table[colname].data.byteswap().newbyteorder())
+            else:
+                two_dim_dfs[colname] = pd.DataFrame(table[colname].data)
+            table.remove_column(colname)
+    else:
+        two_dim_dfs = None
+
+    return one_dim_df, two_dim_dfs
 
 
 ##
@@ -363,6 +411,16 @@ def modify_source_info(info, CIT_number=None, alias=None, append=True):
     Source.source_df.to_csv(Source.source_csv_path, index=False)
 
 
+def set_source_alias(alias, CIT_number):
+    '''
+    Sets the alias of the source with the CIT number 'CIT_number' in the
+    CSV file to 'alias'.
+    '''
+    idx = slice_source_df(CIT_number)[0]
+    Source.source_df.loc[idx, 'alias'] = alias
+    Source.source_df.to_csv(Source.source_csv_path, index=False)
+
+
 class Source:
     '''
     A class whose instances each represent an X-ray source used by the lab.
@@ -480,7 +538,7 @@ class Source:
         'Am241': {13.8520, 21.1600, 26.3446, 59.5409},
         'Co57' : {14.41295, 122.06065, 136.47356},
         'Eu155': {6.73255, 60.00860, 86.54790, 105.30830},
-        'Fe55' : {0.63850, 6.51280, 125.94900}, # include weak 126 keV line?
+        'Fe55' : {0.63850, 6.51280, 125.94900},
         'Ba133': {4.67355, 53.16220, 79.61420, 80.99790},
         'Cs137': {4.8815, 661.657}
     }
@@ -491,12 +549,10 @@ class Source:
         'Co57' : 122.06065,
         'Eu155': 86.54790,
         'Fe55' : 6.51280,
-        'Ba133': 80.99790, # 4 keV line might be a better default?
+        'Ba133': 80.99790,
         'Cs137': 661.657
     }
 
-    # TODO: make 'all_doublets' have a less awful structure, maybe,
-    # or just make a method like 'line', but for doublets. Idk.
 
     # All doublet emission lines that might be fit with two Gaussians. 
     all_doublets = {
@@ -587,7 +643,7 @@ class Source:
         self.doublets = self.all_doublets[isotope]
 
         self.line_data = lara_to_df(f'{self.line_data_dir}/{sym}-{num}'
-            '.lara.txt', energy_threshold=140)
+            '.lara.txt', energy_threshold=150)
 
 
     @classmethod
@@ -659,7 +715,7 @@ class Source:
                 value stored in the 'default_energy' attribute.
                 (default: None)
 
-        Return: Tuple(float, int, int)
+        Return: float
             accurate_energy: float
                 The maximally accurate value of the line's energy in keV.
         '''
@@ -813,6 +869,10 @@ class Source:
             raise ValueError(f"The CIT number {CIT_number} already exists "
                 "in the record. Seems like this source has already been "
                 "recorded here.")
+        if self.CIT_number is None and (self.alias is None or not self.alias):
+            raise ValueError("To add this source to the file, at least one\n"
+                "of the attributes 'CIT_number' or 'alias' must contain a "
+                "valid value.")
 
         idx = self.source_df.index[-1] + 1
 
@@ -845,7 +905,7 @@ class Source:
         source to use when initializing a source object of a given isotope
         from the 'xray_sources.csv' file.
         '''
-        return set_default_source(self.CIT_number, self.alias)
+        set_default_source(self.CIT_number, self.alias)
 
 
     def modify_source_info(self, info, append=True):
@@ -864,7 +924,12 @@ class Source:
                 for this source in the CSV. If False, 'info' will overwrite
                 whatever was already there.
         '''
-        return modify_source_info(info, self.CIT_number, self.alias, append)
+        modify_source_info(info, self.CIT_number, self.alias, append)
+
+
+    def set_source_alias(self, alias):
+        '''Sets the alias of this source in the CSV file to 'alias'.'''
+        set_source_alias(alias, self.CIT_number)
 
 
 ##
@@ -875,37 +940,78 @@ class Experiment:
     '''
     A base class for classes representing various detector tests, like 
     GammaFlood and Noise. This houses some methods that all such classes share.
+
+    Public Class Attributes:
+        numericize: dict
+            Maps all ascii letters to empty strings. When passed to the 
+            'translate' method of strings, removes all letters from the string.
+        full_detector: bool
+            If True, the region being analyzed by this instance represents
+            the full detector. If False, then the analyzed region is a strict
+            subset of the full detector.
+            (default: True)
+        num_caps: int
+            The number of sampling capacitors mediating the pixel readout
+            (default: 16)
+
+    Private Class Attributes:
+        _full_det_shape: Tuple(int, int)
+            Dimensions in pixels of the full detector
+            (default: (32, 32))
+        _num_rows: int
+            number of rows in the analyzed region
+            (default: 32)
+        _num_cols: int
+            number of columns in the analyzed region
+            (default: 32)
+        _det_shape: Tuple(int, int)
+            Dimensions in pixels of the region being analyzed.
+            (default: (32, 32))
+        _det_shape_buff: Tuple(int, int)
+            Shape of an array representing the detector pixels with a 1 pixel 
+            buffer around all edges.
+            (default: (34, 34))
+        _row_iter: a 'range' object
+            Iterates through row numbers (y coordinates) of pixels in the 
+            analyzed region.
+            (default: range(32))
+        _col_iter: a 'range' object
+            Iterates through col numbers (y coordinates) of pixels in the 
+            analyzed region.
+            (default: range(32))
+        _col_slice: a 'slice' object
+            For accessing the columns of the analyzed detector region from an 
+            array representing pixels of the whole detector.
+            (default: slice(0, 32))
+        _row_slice: a 'slice' object
+            For accessing the rows of the analyzed detector region from an 
+            array representing pixels of the whole detector.
+            (default: slice(0, 32))
+        _start_row: int
+            The first row (y coordinate) in the analyzed region.
+            (default: 0)
+        _end_row: int
+            One greater than the last row in the analyzed region.
+            (default: 0)
+        _start_col: int
+            The first column (y coordinate) in the analyzed region.
+            (default: 32)
+        _end_col: int
+            One greater than the last column in the analyzed region.
+            (default: 32)
     '''
 
     # A class attribute for removing letters from strings. Used in subclasses
     # when formatting units.
     numericize = str.maketrans('', '', string.ascii_letters)
 
-
-    #
-    # Class attributes related to the dimensions of the whole detector.
-    #
-
-    _full_num_rows = 32
-    _full_num_cols = 32
-    _full_det_shape = (_full_num_rows, _full_num_cols)
-    # Shape of an array representing the detector pixels with a 1 pixel width
-    # buffer around all edges.
-    _full_det_shape_buff = (_full_num_rows + 2, _full_num_cols + 2)
-
-    # Iterator (range) objects for iterating through rows and columns.
-    _full_row_iter = range(_full_num_rows)
-    _full_col_iter = range(_full_num_cols)
-
-    _full_start_row = 0
-    _full_start_col = 0
-    _full_end_row = 32
-    _full_end_col = 32
-
+    # Dimensions of the whole detector
+    _full_det_shape = (32, 32)
 
     #
     # Class attributes related to the shape of the portion of the 
-    # detector that will be analyzed.
+    # detector that will be analyzed. Initialized below to a region
+    # representing the whole detector.
     #
 
     # A class attribute indicating the dimensions of the detector being tested.
@@ -934,8 +1040,49 @@ class Experiment:
     # The number of sampling capacitors mediating the pixel readout
     num_caps = 16
 
-    def select_detector_region(self, start_row, end_row, start_col, end_col):
+    def select_detector_region(self, start_col, start_row, end_col, end_row):
+        '''
+        Selects a region of the detector to be analyzed, if not the full
+        detector. Following python convention, the pixel coordinates are
+        zero-indexed, and the starting coordinates are included in the region, 
+        while the ending coordinates are excluded. 
 
+        For example, to select the 3 x 5 square region with one corner at 
+        (1, 2) and the opposite corner at (5, 4), as shown by the x's in the
+        diagram below, one call this method like this:
+
+            >>> from nudetect import Noise
+            >>> noise = Noise('raw_data_path', [other initilaization args])
+            >>> noise.select_detector_region(1, 2, 6, 5)
+
+        y
+
+        6 o o o o o o o
+        5 o o o o o o o
+        4 o x x x x x o
+        3 o x x x x x o
+        2 o x x x x x o
+        1 o o o o o o o
+        0 o o o o o o o
+          0 1 2 3 4 5 6  x
+
+
+        Arguments:
+            start_col: int
+                The first column in the region. Corresponds to the x-values
+                of a pixel coordinate (RAWX as referenced in the FITS files).
+            start_row: int
+                The first row in the region. Corresponds to the y-values
+                of a pixel coordinate (RAWY as referenced in the FITS files).
+            end_col: int
+                One greater than the last column in the region. Corresponds to 
+                the x-values of a pixel coordinate (RAWX as referenced in the 
+                FITS files).
+            start_row: int
+                One greater than the last row in the region. Corresponds to 
+                the y-values of a pixel coordinate (RAWY as referenced in the 
+                FITS files).
+        '''
         # Checking parameter values
         check_non_negative(start_row=start_row, end_row=end_row, 
             start_col=start_col, end_col=end_col)
@@ -946,17 +1093,23 @@ class Experiment:
         if start_col >= end_col:
             raise ValueError("'start_col' must be < 'end_col'")
 
+        # Simple iterators that will iterate through the pixel coordinates 
+        # relative to the full detector.
         row_iter = range(start_row, end_row)
         col_iter = range(start_col, end_col)
 
+        # Slice objects for accessing a detector region from the whole detector
         row_slice = slice(start_row, end_row)
         col_slice = slice(start_col, end_col)
 
+        # Total number or rows and columns in the selected region.
         num_rows = end_row - start_row
         num_cols = end_col - start_col
 
-        det_dim = (num_rows, num_cols)
-        det_dim_buff = (num_rows + 2, num_cols + 2)
+        # Dimensions of the region in pixels.
+        det_shape = (num_rows, num_cols)
+        # Dimensions of the above region with a 1 pixel buffer on all sides.
+        det_shape_buff = (num_rows + 2, num_cols + 2)
 
         self._row_iter = row_iter
         self._col_iter = col_iter
@@ -964,11 +1117,16 @@ class Experiment:
         self._row_slice = row_slice
         self._col_slice = col_slice
 
-        self._det_shape = det_dim
-        self._det_shape_buff = det_dim_buff
+        self._det_shape = det_shape
+        self._det_shape_buff = det_shape_buff
 
+        # If the region selected is not the full detector, set
+        # the 'full_detector' attribute to False.
         self.full_detector = self._det_shape == self._full_det_shape
-        self.etc += f'region({start_row},{start_col})({end_row},{end_col})'
+        # Setting the 'etc' attribute so that information about the selected
+        # region is at the end of all files saved about this analysis.
+        if self.full_detector:
+            self.etc += f'region({start_row},{start_col})({end_row},{end_col})'
 
 
     def detector_region_info(self):
@@ -1059,6 +1217,14 @@ class Experiment:
         results of a long computation to a mistyped directory.
 
         Keyword Arguments:
+            save_type:
+                A string specifying the type of data for which this method
+                is generating a save path. Can be 'data' or 'plot'. This 
+                determines whether the method looks in the instance's 
+                'data_dir' or 'plot_dir' attribute for a save directory
+                if 'save_dir' is not specified. If None, the method will
+                look in the instance attribute 'save_dir'.
+                (default: None)
             ext: str
                 The file name extension.
             description: str
@@ -1167,20 +1333,30 @@ class Experiment:
         hist_range=None, title='', text_pos='right', save_plot=True,
         plot_dir='', plot_subdir='', plot_ext='.pdf', etc='', **kwargs):
         '''
-        Plots a histogram of some value for each pixel
+        Plots a histogram of some value for each pixel. If data is
+        not supplied explicitly with 'values', an attribute chosen 
+        based on 'value_label' will be used. For example, 
+
+        if value_label == 'Gain':
+            values = self.gain
+
 
         Arguments:
             value_label: str
                 A short label denoting what data is supplied in 'values'.
                 This is used to determine various default values, like the 
                 attribute to pull data from, the title, and labels. Should be 
-                'Count' or 'FWHM' for best results.
+                'Count', 'FWHM', 'Mean', or 'Leakage' for best results.
 
         Keyword Arguments:
+            values: array-like
+                A array of numbers to make a histogram of. Required if anything
+                other than 'Gain', 'Count', or 'FWHM' is supplied to 
+                'value_label'.
             bins: int
                 The number of bins in which to histogram the data. Passed 
                 directly to plt.hist.
-                (default: 50)
+                (default: 70)
             hist_range: tuple(number, number)
                 Indicated the range in which to bin data. Passed directly to
                 plt.hist. If None, it is set to (0, 4) for gain-corrected data
@@ -1257,15 +1433,35 @@ class Experiment:
             # Setting some plot parameters and converting units based on whether 
             # the supplied data is gain-corrected.
             if self._gain_corrected:
-                # if hist_range is None:
-                #     hist_range = (0, 4)
+                if hist_range is None:
+                    hist_range = (0, 4)
                 mean = int(round(np.mean(values) * 1000, 0))
                 stdv = int(round(np.std(values) * 1000, 0))
                 text_units = ' eV'
                 axis_units = ' (keV)'
             else:
-                # if hist_range is None:
-                #     hist_range = (0, 150) # Not good?
+                if hist_range is None:
+                    hist_range = (0, 150) # Not a good default?
+                mean = round(np.mean(values), 0)
+                stdv = round(np.std(values), 0)
+                text_units = ' channels'
+                axis_units = ' (channels)'
+
+        elif 'mean' in value_label.lower():
+            xlabel = 'Mean'
+            if values is None: 
+                values = self._mean_map
+            if title == 'auto':
+                title = self.title('Mean Histogram')
+
+            # Setting some plot parameters and converting units based on  
+            # whether the supplied data is gain-corrected.
+            if self._gain_corrected:
+                mean = int(round(np.mean(values) * 1000, 0))
+                stdv = int(round(np.std(values) * 1000, 0))
+                text_units = ' eV'
+                axis_units = ' (keV)'
+            else:
                 mean = round(np.mean(values), 0)
                 stdv = round(np.std(values), 0)
                 text_units = ' channels'
@@ -1338,15 +1534,17 @@ class Experiment:
         Arguments:
             value_label: str
                 A short label denoting what data is supplied in 'values'.
-                The strings 'Gain', 'Count', 'FWHM', and 'Leakage', if supplied, will trigger some presets regarding file name, plot title, and plot label formatting. If 'Gain', 'Count', or 
+                The strings 'Gain', 'Count', 'FWHM', 'Mean', and 'Leakage', if 
+                supplied, will trigger some presets regarding file name, plot 
+                title, and plot label formatting. If 'Gain', 'Count', or 
                 'FWHM' are supplied, 'values' will automatically be set to
                 the value in the appropriate processed data attribute.
 
         Keyword Arguments:
-            values: 2D array
+            values: 2D array-like
                 A array of numbers to make a heat map of. Required if anything
-                other than 'Gain', 'Count', or 'FWHM' is supplied to 
-                'value_label'. Shape should be (32, 32).
+                other than 'Gain', 'Count', 'Mean', or 'FWHM' is supplied to 
+                'value_label'.
             cmap_name: str
                 The name of a matplotlib colormap. Passed to 'mpl.cm.get_cmap'.
                 (default: 'inferno')
@@ -1418,6 +1616,13 @@ class Experiment:
                 values = self.fwhm_map
             if title == 'auto':
                 title = self.title('FWHM Map')
+
+        elif 'mean' in value_label.lower():
+            xlabel = 'Mean'
+            if values is None: 
+                values = self._mean_map
+            if title == 'auto':
+                title = self.title('Mean Histogram')
 
         elif 'leak' in value_label.lower():
             if not cb_label:
@@ -1514,9 +1719,21 @@ class Noise(Experiment):
 
     Private attributes:
         _fwhm_map: 2D numpy.ndarray
-            A 32 x 32 array with the fwhm of the gaussian fit to the noise
+            An array with the fwhm of the gaussian fit to the noise
             data collected at the corresponding pixel.
             (initialized to None)
+        _mean_map: 2D numpy.ndarray
+            An array with the mean of the gaussian fit to the noise
+            data collected at the corresponding pixel.
+            (initialized to None)
+        _fwhm_maps: 3D numpy.ndarray
+            TODO
+        _mean_maps: 3D numpy.ndarray
+            TODO
+        _quick_fit_data: pandas.DataFrame
+            TODO
+        _full_fit_data: pandas.DataFrame
+            TODO
         _gain_corrected: bool
             If True, indicates that the '_fwhm_map' attribute has been gain-
             corrected. If False, it has not. If None, then the '_fwhm_data'
@@ -1597,6 +1814,7 @@ class Noise(Experiment):
         self._fwhm_map = None
         self.count_map = None
 
+        self.raw_data = None
         self.raw_data_path = raw_data_path
         self.detector = detector
         self.temp = temp
@@ -1609,9 +1827,14 @@ class Noise(Experiment):
         self._set_save_dir(data_dir, save_type='data')
 
     #
-    # Small helper methods and such:'load_fwhm_map', 'set_fwhm_map', 
-    # 'get_fwhm_map', and 'get_gain_corrected'.
+    # Methods for accessing private attributes
     #
+
+    def load_raw_data(self):
+        '''Loads raw data from FITS file into attributes of this instance.'''
+        self.raw_data_1d, self.raw_data_2d = fits_to_df(self.raw_data_path,
+            colnames={'RAWX', 'RAWY', 'PH_RAW', 'UP', 'S_CAP'},
+            pos=self.pos)
 
 
     def load_fwhm_map(self, fwhm_map, gain_corrected=None):
@@ -1707,13 +1930,106 @@ class Noise(Experiment):
         return self._fwhm_map
 
 
+    def load_mean_map(self, mean_map, gain_corrected=None):
+        '''
+        Sets the '_mean_map' and '_gain_corrected' attributes of this 
+        instance based on a path to the mean map data file.
+
+        Arguments:
+            mean_map: str
+                A path to an ascii file containing mean map data.
+
+        Keyword Arguments:
+            gain_corrected: bool
+                If True, indicated that the supplied mean data was gain 
+                corrected and is in units of keV. If False, then the data
+                should still be in units of channels. If None, then the 
+                value will be determined by the path (specifically
+                whether the phrase 'nogain' is in the file name).
+        '''
+        # If 'gain_corrected' specified, set its value based on the 
+        # path 'mean_map'.
+        if gain_corrected is None:
+            gain_corrected = 'nogain' not in mean_map
+            if 'gain' not in mean_map:
+                raise Exception('Could not determine from the file name '
+                    + 'whether the mean map was corrected for gain. Please'
+                    + "enter an appropriate value for 'gain_corrected'.")
+
+        if type(gain_corrected) != bool:
+            raise TypeError("'gain_corrected must be type 'bool'. Type "
+                + f"{type(gain_corrected)} was given.")
+ 
+        self._gain_corrected = gain_corrected
+
+        mean_map = np.loadtxt(mean_map)
+
+        if mean_map.shape != self._det_shape and \
+           mean_map.shape != self._full_det_shape:
+
+            raise ValueError("The array 'mean_map' should either have the  "
+                f"shape {self._det_shape} or {self._full_det_shape}. Instead, "
+                f"an array of shape {mean_map.shape} was passed.")
+
+        # Mask large values, taking into account whether mean is in units
+        # of channels or of keV.
+        if gain_corrected:
+            mean_map = np.ma.masked_where(mean_map > 5, mean_map)
+        else:
+            mean_map = np.ma.masked_where(mean_map > 400, mean_map)
+
+        self._mean_map = mean_map
+
+
+    def set_mean_map(self, mean_map, gain_corrected):
+        '''
+        Sets the '_mean_map' and '_gain_corrected' attributes of this 
+        instance using a numpy.ndarray object containing the data and 
+        user input for whether it is gain corrected.
+
+        Arguments:
+            mean_map: numpy.ndarray
+                A 2D numpy array containing mean map data.
+            gain_corrected: bool
+                If True, indicated that the supplied mean data was gain 
+                corrected and is in units of keV. If False, then the data
+                should still be in units of channels.
+        '''
+        if type(gain_corrected) != bool:
+            raise TypeError("'gain_corrected must be type 'bool'. Type "
+                + f"{type(gain_corrected)} was given.")
+
+        self._gain_corrected = gain_corrected
+
+        if mean_map.shape != self._det_shape and \
+           mean_map.shape != self._full_det_shape:
+
+            raise ValueError("The array 'mean_map' should either have the  "
+                f"shape {self._det_shape} or {self._full_det_shape}. Instead, "
+                f"an array of shape {mean_map.shape} was passed.")
+
+        # Mask large values, taking into account whether mean is in units
+        # of channels or of keV.
+        if gain_corrected:
+            mean_map = np.ma.masked_where(mean_map > 5, mean_map)
+        else:
+            mean_map = np.ma.masked_where(mean_map > 400, mean_map)
+
+        self._mean_map = mean_map
+
+
+    def get_mean_map(self):
+        '''Returns a copy of the private attribute '_mean_map'.'''
+        return self._mean_map
+
+
     def get_gain_corrected(self):
         '''Returns a copy of the private attribute '_gain_corrected'.'''
         return self._gain_corrected
 
 
     #
-    # Heavy lifting data analysis method: 'gen_quick_noise' and 
+    # Heavy lifting data analysis methods: 'gen_quick_noise' and 
     # 'gen_full_noise'.
     #
 
@@ -1822,10 +2138,12 @@ class Noise(Experiment):
         # Generating the save paths, if needed.
         if save_data:
             fwhm_path = self.construct_path('data', ext=data_ext, 
-                save_dir=data_dir, subdir=data_subdir, description='quick_fwhm_data',
+                save_dir=data_dir, subdir=data_subdir, 
+                description='quick_fwhm_data',
                 etc=etc)
             mean_path = self.construct_path('data', ext=data_ext, 
-                save_dir=data_dir, subdir=data_subdir, description='quick_mean_data',
+                save_dir=data_dir, subdir=data_subdir, 
+                description='quick_mean_data',
                 etc=etc)
             count_path = self.construct_path('data', ext=data_ext, 
                 save_dir=data_dir, subdir=data_subdir, 
@@ -1838,9 +2156,6 @@ class Noise(Experiment):
             plot_path = self.construct_path('plot', save_dir=plot_dir, 
                 etc=etc_plot, subdir=plot_subdir, description='pix_spectrum', 
                 ext=plot_ext)
-
-        # Get data from noise FITS file
-        data = load_fits_data(self.raw_data_path, self.pos)
 
         if not gain_bool:
             gain = np.ones(self._det_shape)
@@ -1892,24 +2207,27 @@ class Noise(Experiment):
             for col in range(self._num_cols + (3 - self._num_cols) % 3)] 
             for row in range(self._num_rows + (3 - self._num_rows) % 3)]
 
+        ph_raw = self.raw_data_2d['PH_RAW']
+
         # Iterating through pixels
         for col in self._col_iter:
-            RAWXmask = np.array(data['RAWX']) == col
+            col_mask = self.raw_data_1d.loc[:, 'RAWX'] == col
             for row in self._row_iter:
-                RAWYmask = np.array(data['RAWY']) == row
+                row_mask = self.raw_data_1d.loc[:, 'RAWY'] == row
                 # Storing all readings for the current pixel in 'pulses'.
-                inds = np.nonzero(RAWXmask * RAWYmask)
-                pulses = data.field('PH_RAW')[inds]
-                for idx, pulse in enumerate(pulses):
+                pixel_mask = (col_mask) & (row_mask)
+                pulses = ph_raw.loc[pixel_mask]
+                del pixel_mask
+                for i in pulses.index:
                     # If this pulse was triggered by the experiment (by a 
                     # 'micro pulse'), then add the pulse data for the 3 x 3
                     # pixel grid centered on the triggered pixel to the 
                     # corresponding indices of 'chan_map'.
-                    if data['UP'][idx]:
-                        for i in range(9):
-                            mapcol = (col - self._start_col) + (i % 3) - 1
-                            maprow = (row - self._start_row) + (i // 3) - 1
-                            chan_map[maprow][mapcol].append(pulse[i])
+                    if self.raw_data_1d.at[i, 'UP']:
+                        for j in range(9):
+                            mapcol = (col - self._start_col) + (j % 3) - 1
+                            maprow = (row - self._start_row) + (j // 3) - 1
+                            chan_map[maprow][mapcol].append(pulses.at[i, j])
 
         del mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
 
@@ -1925,10 +2243,12 @@ class Noise(Experiment):
         # Iterate through elements of chan_map
         for row in range(self._num_rows):
             for col in range(self._num_cols):
+                maprow = row - self._start_row
+                mapcol = col - self._start_col
                 # If there were events at this pixel, bin them by channel
-                if chan_map[row][col]:
+                if chan_map[maprow][mapcol]:
                     # Binning events by channel
-                    spectrum, edges = np.histogram(chan_map[row][col], 
+                    spectrum, edges = np.histogram(chan_map[maprow][mapcol], 
                         bins=bins, range=(-maxchannel, maxchannel))
 
                     # Fitting the noise peak at/near zero channels
@@ -1940,11 +2260,11 @@ class Noise(Experiment):
 
                     # Recording the gain-corrected FWHM and mean data
                     # for this pixel in the corresponding arrays.
-                    fwhm_map[row, col] = np.multiply(
-                        g.fwhm, gain[row, col])
+                    fwhm_map[maprow, mapcol] = np.multiply(
+                        g.fwhm, gain[maprow, mapcol])
 
-                    mean_map[row, col] = np.multiply(
-                        g.mean, gain[row, col])
+                    mean_map[maprow, mapcol] = np.multiply(
+                        g.mean, gain[maprow, mapcol])
 
                     # 1 stardard deviation error for Gaussian parameters.
                     sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
@@ -1957,13 +2277,14 @@ class Noise(Experiment):
 
                     if save_plot:
                         plt.hist(np.multiply(
-                                chan_map[row][col], gain[row, col]),
-                            bins=np.multiply(bins, gain[row, col]), 
-                            range=(-maxchannel * gain[row, col], 
-                                    maxchannel * gain[row, col]), 
+                                chan_map[row][col], gain[maprow, mapcol]),
+                            bins=np.multiply(bins, gain[maprow, mapcol]), 
+                            range=(-maxchannel * gain[maprow, mapcol], 
+                                    maxchannel * gain[maprow, mapcol]), 
                             histtype='stepfilled')
 
-                        plt.plot(np.multiply(fit_channels, gain[row, col]),
+                        plt.plot(np.multiply(
+                            fit_channels, gain[maprow, mapcol]), 
                             g(fit_channels))
 
                         plt.ylabel('Counts')
@@ -2128,7 +2449,7 @@ class Noise(Experiment):
                 ext=plot_ext)
 
         # Get data from noise FITS file
-        data = load_fits_data(self.raw_data_path, self.pos)
+        data = fits_to_df(self.raw_data_path, self.pos)
 
         if not gain_bool:
             gain = np.ones(self._det_shape)
@@ -2180,9 +2501,11 @@ class Noise(Experiment):
             np.empty((np.prod(output_shape), len(columns))),
             columns=columns, index=index)
 
+        ph_raw = self.raw_data_2d['PH_RAW']
+
         # Iterating through starting capacitor values
         for start_cap in range(self.num_caps):
-            S_CAP_mask = np.array(data['S_CAP'] == start_cap)
+            start_cap_mask = np.array(data['S_CAP'] == start_cap)
             # Generate 'chan_map', a nested list representing an array 
             # of lists, each of which contains all the trigger readings for 
             # its corresponding pixel. The shape of the 'array' of lists
@@ -2195,22 +2518,24 @@ class Noise(Experiment):
 
             # Iterating through pixels
             for col in self._col_iter:
-                RAWXmask = np.array(data['RAWX']) == col
+                col_mask = np.array(data['RAWX']) == col
                 for row in self._row_iter:
-                    RAWYmask = np.array(data['RAWY']) == row
+                    row_mask = np.array(data['RAWY']) == row
                     # Storing all readings for the current pixel in 'pulses'.
-                    inds = np.nonzero(RAWXmask * RAWYmask * S_CAP_mask)
-                    pulses = data.field('PH_RAW')[inds]
-                    for idx, pulse in enumerate(pulses):
+                    mask = (col_mask) & (row_mask) & (start_cap_mask)
+                    pulses = ph_raw.loc[mask]
+                    del mask
+                    for i in pulses.index:
                         # If this pulse was triggered by the experiment (by a 
                         # 'micro pulse'), then add the pulse data for the 3 x 3
                         # pixel grid centered on the triggered pixel to the 
                         # corresponding indices of 'chan_map'.
-                        if data['UP'][idx]:
-                            for i in range(9):
-                                mapcol = (col - self._start_col) + (i % 3) - 1
-                                maprow = (row - self._start_row) + (i // 3) - 1
-                                chan_map[maprow][mapcol].append(pulse[i])
+                        if self.raw_data_1d.at[i, 'UP']:
+                            for j in range(9):
+                                mapcol = (col - self._start_col) + (j % 3) - 1
+                                maprow = (row - self._start_row) + (j // 3) - 1
+                                chan_map[maprow][mapcol].append(
+                                    pulses.at[i, j])
 
             del mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
 
@@ -2225,13 +2550,16 @@ class Noise(Experiment):
             # Generate a fwhm map of noise, and plot the gaussian fit to each 
             # pixel's spectrum.
             
-            # Iterate through elements of chan_map
-            for row in range(self._num_rows):
-                for col in range(self._num_cols):
+            # Iterate through pixels
+            for row in self._row_iter:
+                for col in self._col_iter:
+                    maprow = row - self._start_row
+                    mapcol = col - self._start_col
                     # If there were events at this pixel, bin them by channel
-                    if chan_map[row][col]:
+                    if chan_map[maprow][mapcol]:
                         # Binning events by channel
-                        spectrum, edges = np.histogram(chan_map[row][col], 
+                        spectrum, edges = np.histogram(
+                            chan_map[maprow][mapcol], 
                             bins=bins, range=(-maxchannel, maxchannel))
 
                         # Fitting the noise peak at/near zero channels
@@ -2244,11 +2572,11 @@ class Noise(Experiment):
                         # Recording the gain-corrected FWHM and mean data
                         # for this pixel and starting capacitor in the
                         # corresponding arrays.
-                        fwhm_maps[start_cap, row, col] = np.multiply(
-                            g.fwhm, gain[row, col])
+                        fwhm_maps[start_cap, maprow, mapcol] = np.multiply(
+                            g.fwhm, gain[maprow, mapcol])
 
-                        mean_maps[start_cap, row, col] = np.multiply(
-                            g.mean, gain[row, col])
+                        mean_maps[start_cap, maprow, mapcol] = np.multiply(
+                            g.mean, gain[maprow, mapcol])
 
                         # 1 stardard deviation error for Gaussian parameters.
                         sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
@@ -2261,14 +2589,15 @@ class Noise(Experiment):
 
                         if save_plot:
                             plt.hist(np.multiply(
-                                    chan_map[row][col], gain[row, col]),
-                                bins=np.multiply(bins, gain[row, col]), 
-                                range=(-maxchannel * gain[row, col], 
-                                        maxchannel * gain[row, col]), 
+                                    chan_map[maprow][mapcol], 
+                                    gain[maprow, mapcol]),
+                                bins=np.multiply(bins, gain[maprow, mapcol]), 
+                                range=(-maxchannel * gain[maprow, mapcol], 
+                                        maxchannel * gain[maprow, mapcol]), 
                                 histtype='stepfilled')
 
-                            plt.plot(np.multiply(fit_channels, gain[row, col]),
-                                g(fit_channels))
+                            plt.plot(np.multiply(fit_channels, 
+                                gain[maprow, mapcol]), g(fit_channels))
 
                             plt.ylabel('Counts')
                             if gain_bool:
@@ -3196,6 +3525,12 @@ class GammaFlood(Experiment):
         self._set_save_dir(data_dir, save_type='data')
 
 
+    def load_raw_data(self):
+        '''Loads raw data from FITS file into attributes of this instance.'''
+        self.raw_data_1d, self.raw_data_2d = fits_to_df(self.raw_data_path,
+            colnames={'RAWX', 'RAWY', 'PH', 'PH_COM', 'STIM'})
+
+
     #
     # Heavy-lifting data analysis methods: 'gen_count_map', 'gen_quick_gain',
     # and 'gen_spectrum'.
@@ -3259,30 +3594,26 @@ class GammaFlood(Experiment):
                 subdir=data_subdir)
 
 
-        # Get data from gamma flood FITS file
-        data = load_fits_data(self.raw_data_path)
+        # Masking out non-positive pulse heights and/or artificially 
+        # stimulated events, if requested
+        mask = pd.Series(np.ones_like(self.raw_data_1d.loc[:, 'STIM']))
 
-        # Masking out non-positive pulse heights
-        if mask_PH:
-            PHmask = 0 < np.array(data['PH'])
-        # Masking out artificially stimulated events
         if mask_STIM:
-            STIMmask = np.array(data['STIM']) == 0
-        # Combining the above masks
-        TOTmask = np.multiply(PHmask, STIMmask)
+            mask *= self.raw_data_1d.loc[:, 'STIM'] == 0
+        if mask_PH:
+            mask *= self.raw_data_1d.loc[:, 'PH'] > 0
 
         # Generate the count_map from event data
-        count_map = np.zeros(self._det_shape)
-
+        count_map = np.zeros(self._det_shape, dtype='uint32')
 
         for col in self._col_iter:
-            RAWXmask = np.array(data['RAWX']) == col
+            col_mask = self.raw_data_1d.loc[:, 'RAWX'] == col
             for row in self._row_iter:
-                RAWYmask = np.array(data['RAWY']) == row
+                row_mask = self.raw_data_1d.loc[:, 'RAWY'] == row
                 maprow = row - self._start_row
                 mapcol = col - self._start_col
                 count_map[maprow, mapcol] = np.sum(np.multiply(
-                    TOTmask, np.multiply(RAWXmask, RAWYmask)))
+                    mask, np.multiply(col_mask, row_mask)))
 
         # Masking pixels that were turned off, before calculating
         # the rest of the masks (otherwise they'll skew mean and stddev)
@@ -3410,12 +3741,13 @@ class GammaFlood(Experiment):
             plot_path = self.construct_path('plot', description='gain', 
                 ext=plot_ext,  save_dir=plot_dir, subdir=plot_subdir)
 
+        # Setting parameters of this emission line to help with fitting it
+        # later. 'energy' is the line's energy in keV. 'chan_low' and 
+        # 'chan_high' indicates the range of channels in which we should
+        # expect to find the emission line.
         energy = self.source.line(energy)
         chan_low, chan_high = self.source.chan_range(energy, gain_estimate,
             width=search_width)
-
-        # Get data from gamma flood FITS file
-        data = load_fits_data(self.raw_data_path)
 
         maxchannel = 10000
         bins = np.arange(1, maxchannel)
@@ -3423,14 +3755,16 @@ class GammaFlood(Experiment):
 
         # Iterating through pixels
         for col in self._col_iter:
-            RAWXmask = data.field('RAWX') == col
+            col_mask = self.raw_data_1d.loc[:, 'RAWX'] == col
             for row in self._row_iter:
-                RAWYmask = data.field('RAWY') == row
+                row_mask = self.raw_data_1d.loc[:, 'RAWY'] == row
 
-                # Getting peak height in 'channels' for all events for the 
-                # current pixel.
-                channel = data.field('PH')[np.nonzero(
-                    np.multiply(RAWXmask, RAWYmask))]
+                # Getting pulse height in channels for all events for the 
+                # current pixel. We store this in 'channel' as a numpy.ndarray,
+                # since we don't need the index of the original DataFrame, and
+                # np.histogram should be faster on an ndarray than a DataFrame.
+                channel = self.raw_data_1d.loc[
+                    (col_mask) & (row_mask), 'PH'].data
 
                 # If there were events at this pixel, fit the strongest peak
                 # in the channel spectrum with a Gaussian.
@@ -3589,47 +3923,44 @@ class GammaFlood(Experiment):
                     1:self._num_cols + 1] = gain
         gain = gain_buffed
 
-        # Get data from gamma flood FITS file
-        data = load_fits_data(self.raw_data_path)
-
         # PH_COM is a list of length 9 corresponding to the charge in pixels 
         # surrounding the event.
         #
         # PH_COM -> gain correct -> sum positive elements in the 3x3 array -> 
         # event in energy units
 
+        ph_com = self.raw_data_2d['PH_COM']
+
         # 'energies' is a list of event energies in keV.
         energies = []
         # iterating through pixels in the selected region
         for row in self._row_iter:
-            row_mask = data['RAWY'] == row
+            row_mask = self.raw_data_1d.loc[:, 'RAWY'] == row
             for col in self._col_iter:
-                col_mask = data['RAWX'] == col
+                col_mask = self.raw_data_1d.loc[:, 'RAWX'] == col
 
                 maprow = row - self._start_row
                 mapcol = col - self._start_col
-                # Getting indices ('inds') and PH_COM values ('pulses') of 
-                # all events at current pixel.
-                inds = np.nonzero(np.multiply(row_mask, col_mask))
-                pulses = data.field('PH_COM')[inds]
-                # The gain for the 3x3 grid around this pixel
+                # Getting PH_COM values ('pulses') of all events at current 
+                # pixel and storing as an ndarray in 'pulses'.
+                pulses = ph_com.loc[(row_mask) & (col_mask)].data
+                # The gain for the 3 x 3 grid around this pixel
                 gain_grid = gain[maprow:maprow + 3, mapcol:mapcol + 3]
                 # iterating through the PH_COM values for this pixel
                 for pulse in pulses:
                     # Append the sum of positive energies in the 
                     # pulse grid to 'energies'
-                    pulse_grid = pulse.reshape(3, 3)
+                    pulse_grid = pulse.reshape((3, 3))
                     mask = (pulse_grid > 0).astype(int)
                     energies.append(np.sum(np.multiply(
                         np.multiply(mask, pulse_grid), gain_grid)))
-
-        del data
 
         # Binning by energy
         counts, edges = np.histogram(energies, bins=bins, range=energy_range)
         del energies
 
-        # Getting the midpoint of the edges of each bin.
+        # Getting the midpoint of the edges of each bin, representing an energy
+        # in keV.
         midpoints = (edges[:-1] + edges[1:]) / 2
 
         # Consolidating 'counts' and 'midpoints' into a 2D array 'spectrum'.
@@ -3718,12 +4049,21 @@ class GammaFlood(Experiment):
         if title == 'auto':
             title = self.title('Spectrum')
 
-        energy = self.source.line(energy)
-
         maxchannel = 10000
 
-        # 'centroid' is the bin with the most counts
-        centroid = np.argmax(spectrum[0, 1000:]) + 1000
+        # 'energy' is the precise energy of the line being fit.
+        energy = self.source.line(energy)
+        # 'energy_low' and 'energy_high' represent the interval, in keV, in 
+        # which we expect the emission line to be.
+        energy_low, energy_high = energy - 2, energy + 2
+        # 'bool_spectrum' is a boolean array with 'True' at ea. index of 
+        # 'spectrum' whose energy is in the above interval.
+        bool_spectrum = spectrum[1] > energy_low and spectrum[1] < energy_high
+        start = np.argmax(bool_spectrum)
+        end = len(bool_spectrum) - np.argmax(bool_spectrum[::-1])
+        # 'centroid' is the index of the bin with the most counts in 
+        # the above interval.
+        centroid = np.argmax(spectrum[0, start:end]) + start
         # Fit in an asymetrical domain about the centroid to avoid 
         # low energy tails.
         fit_channels = np.arange(centroid - fit_below, centroid + fit_above)

@@ -46,4 +46,5 @@ def test_csv_modification():
     assert s_init.slice_source_df()[1]['info'][:original_length] == \
         'initialized using the default constructor'
 
-#test_csv_modification()
+    s_init.set_source_alias('foo')
+    assert s_init.slice_source_df()[1]['alias'] == 'foo'
