@@ -4,8 +4,8 @@ from nudetect import Noise
 
 noise = Noise('/disk/lif2/spike/detectorData/'
     'H117/20180803_H117_noise_-10C_-500V/20180803_H117_noise_-10C_-500V.fits',
-    data_dir='outputs/{}/noise/data',
-    plot_dir='outputs/{}/noise/plots',
+    data_dir='~/outputs/{}/noise/data',
+    plot_dir='~/outputs/{}/noise/plots',
     detector='H117',
     voltage=-500,
     temp=5)
