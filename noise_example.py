@@ -17,9 +17,9 @@ noise = Noise('/disk/lif2/spike/detectorData/'
 
 # Generating both count and FWHM data for each pixel. 
 
-noise.gen_quick_maps(plot_subdir='pixels')
+noise.gen_quick_noise(plot_subdir='pixels')
 
-noise.gen_full_maps()
+noise.gen_full_noise()
 
 
 #
