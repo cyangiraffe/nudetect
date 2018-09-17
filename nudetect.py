@@ -2217,7 +2217,6 @@ class Noise(Experiment):
                 # Storing all readings for the current pixel in 'pulses'.
                 pixel_mask = (col_mask) & (row_mask)
                 pulses = ph_raw.loc[pixel_mask]
-                del pixel_mask
                 for i in pulses.index:
                     # If this pulse was triggered by the experiment (by a 
                     # 'micro pulse'), then add the pulse data for the 3 x 3
@@ -2229,7 +2228,7 @@ class Noise(Experiment):
                             maprow = (row - self._start_row) + (j // 3) - 1
                             chan_map[maprow][mapcol].append(pulses.at[i, j])
 
-        del mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
+        del pulses, pixel_mask, col_mask, row_mask
 
         # Generate a count map of micropulse-triggered events from 
         # 'chan_map'.
@@ -2524,7 +2523,6 @@ class Noise(Experiment):
                     # Storing all readings for the current pixel in 'pulses'.
                     mask = (col_mask) & (row_mask) & (start_cap_mask)
                     pulses = ph_raw.loc[mask]
-                    del mask
                     for i in pulses.index:
                         # If this pulse was triggered by the experiment (by a 
                         # 'micro pulse'), then add the pulse data for the 3 x 3
@@ -2537,7 +2535,7 @@ class Noise(Experiment):
                                 chan_map[maprow][mapcol].append(
                                     pulses.at[i, j])
 
-            del mapcol, maprow, pulses, inds, RAWYmask, RAWXmask
+            del pulses, mask, row_mask, col_mask, start_cap_mask
 
             # Generate a count map of micropulse-triggered events from 
             # 'chan_map' and insert it into the appropriate slice of the 
@@ -3015,6 +3013,11 @@ class Leakage(Experiment):
             n_zero = np.empty(self._det_shape)
             cp_zero = np.empty(self._det_shape)
 
+            # TODO:
+            # I recommend reading this in with pandas, like the rest of this
+            # module does, but I don't have time for that rn, and this part
+            # of the code runs pretty fast anyway, though you could probably
+            # get it around twice as fast using pandas.
             cp_zero_data = asciio.read(
                 f'{self.raw_data_path}/{filename}_{temp}C.C0V.txt')
             n_zero_data = asciio.read(
@@ -3826,7 +3829,7 @@ class GammaFlood(Experiment):
                             plt.savefig(f'{plot_path}_x{col}_y{row}{plot_ext}')
                             plt.close()
 
-        del RAWXmask, channel, data
+        del col_mask, row_mask, channel, data
 
         # Interpolate gain for pixels where fit was unsuccessful. Do it
         # multiple times if specified.
