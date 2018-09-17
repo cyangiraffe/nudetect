@@ -10,6 +10,7 @@ noise = Noise('/disk/lif2/spike/detectorData/'
     voltage=-500,
     temp=5)
 
+noise.load_raw_data()
 
 #
 # Processing data
