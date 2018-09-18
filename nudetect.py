@@ -2318,9 +2318,9 @@ class Noise(Experiment):
         self._gain_corrected = gain_bool
 
         if save_data:
-            np.save(fwhm_path, fwhm_map)
-            np.save(mean_path, mean_map)
-            np.save(count_path, count_map)
+            np.savetxt(fwhm_path, fwhm_map)
+            np.savetxt(mean_path, mean_map)
+            np.savetxt(count_path, count_map)
             fit_data.to_csv(fit_data_path)
 
         return fit_data
