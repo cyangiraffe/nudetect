@@ -1613,7 +1613,7 @@ class Experiment:
             if not cb_label: 
                 cb_label = 'FWHM (keV)'
             if values is None: 
-                values = self.fwhm_map
+                values = self._fwhm_map
             if title == 'auto':
                 title = self.title('FWHM Map')
 
@@ -2455,9 +2455,6 @@ class Noise(Experiment):
             plot_path = self.construct_path('plot', save_dir=plot_dir, 
                 etc=etc_plot, subdir=plot_subdir, description='pix_spectrum', 
                 ext=plot_ext)
-
-        # Get data from noise FITS file
-        data = fits_to_df(self.raw_data_path, self.pos)
 
         if not gain_bool:
             gain = np.ones(self._det_shape)
@@ -3857,7 +3854,7 @@ class GammaFlood(Experiment):
                             plt.savefig(f'{plot_path}_x{col}_y{row}{plot_ext}')
                             plt.close()
 
-        del col_mask, row_mask, channel, data
+        del col_mask, row_mask, channel
 
         # Interpolate gain for pixels where fit was unsuccessful. Do it
         # multiple times if specified.
@@ -4131,107 +4128,3 @@ class GammaFlood(Experiment):
         plt.tight_layout()
         if save_plot:
             plt.savefig(save_path)
-
-
-# DEPRECATED: the code below will be in a separate file in the future.
-
-# If this file is run as a script, the code below will run a complete pipeline
-# for an experiment's data analysis with limited parameter customization.
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='Analyze detector data.')
-    parser.add_argument('experiment', metavar='A', type=str,
-        help="""Determines which experiment is being analyzed. Can take on
-        the values 'gamma', 'noise', or 'leakage'.""")
-
-    experiment = parser.parse_args().experiment.lower()
-
-    # Run complete gamma flood data analysis.
-    if experiment == 'gamma' or experiment == 'gammaflood':
-
-        raw_data_path = input('Enter the path to the gamma flood data: ')
-        while not os.path.exists(raw_data_path):
-            raw_data_path = input("That path doesn't exist. " + 
-                "Enter another path to the gamma flood data: ")
-
-        source = input('Enter the name of the source used (Am241 or Co57): ')
-        detector = input('Enter the detector ID: ')
-        voltage = input('Enter the voltage in Volts (no unit symbol): ')
-        temp = input('Enter the temperature in Celsius (no unit symbol): ')
-        data_dir = input('Enter a directory to save output data to: ')
-        plot_dir = input('Enter a directory to save output plots to: ')
-
-        gamma = GammaFlood(raw_data_path, detector, source, voltage, temp,
-            data_dir=data_dir, plot_dir=plot_dir)
-
-        pixel_dir = input('Enter a subdirectory to save pixel spectra to: ')
-
-        # Processing data
-        print('Calculating count data...')
-        count_map = gamma.gen_count_map()
-
-        print('Calculating gain data...')
-        gain = gamma.gen_quick_gain(plot_subdir=pixel_dir)
-
-        print('Calculating the energy spectrum...')
-        gamma.gen_spectrum()
-
-        # Plotting
-        print('Plotting...')
-
-        gamma.plot_spectrum()
-        gamma.plot_pixel_hist('Count')
-        gamma.plot_pixel_map('Count')
-        gamma.plot_pixel_map('Gain')
-
-        print('Done!')
-
-    # Run complete noise data analysis.
-    elif experiment == 'noise':
-
-        # Requesting paths to noise and gain data
-        raw_data_path = input('Enter the path to the noise data: ')
-        while not os.path.exists(raw_data_path):
-            raw_data_path = input("That path doesn't exist. " + 
-                "Enter another path to the noise data: ")
-
-        gainpath = input('Enter the path to the gain data, or leave blank ' + 
-            'if there is no gain data: ')
-        # Request a different input if a non-existent path (other than an
-        # empty string) was given for 'gainpath'.
-        while not os.path.exists(gainpath) and gainpath:
-            raw_data_path = input("That path doesn't exist. " + 
-                "Enter another path to the noise data: ")
-        
-        gain = None
-        if gainpath:
-            gain = np.loadtxt(gainpath)
-
-        # Requesting experiment information and where to save outputs
-        detector = input('Enter the detector ID: ')
-        pos = input('Enter the detector positon: ')
-        voltage = input('Enter the voltage in Volts (no unit symbol): ')
-        temp = input('Enter the temperature in Celsius (no unit symbol): ')
-        data_dir = input('Enter a directory to save data outputs to: ')
-        plot_dir = input('Enter a directory to save plot outputs to: ')
-
-        noise = Noise(raw_data_path, detector, voltage, temp, pos, gain=gain,
-            data_dir=data_dir, plot_dir=plot_dir)
-
-        pixel_dir = input('Enter a subdirectory to save pixel spectra to: ')
-
-        # Processing data
-        print('Calculating fwhm and count data...')
-        noise.gen_noise_maps(plot_subdir=pixel_dir)
-
-        print('Plotting...')
-        # Plotting data
-        noise.plot_pixel_map('Count')
-        noise.plot_pixel_map('FWHM')
-
-        noise.plot_pixel_hist('Count')
-        noise.plot_pixel_hist('FWHM')
-
-        print('Done!')
-
