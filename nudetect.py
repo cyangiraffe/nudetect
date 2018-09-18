@@ -2624,9 +2624,9 @@ class Noise(Experiment):
         # Mask large values, taking into account whether fwhm is in units
         # of channels or of keV.
         if gain_bool:
-            fwhm_maps = np.ma.masked_where(fwhm_map > 5, fwhm_map)
+            fwhm_maps = np.ma.masked_where(fwhm_maps > 5, fwhm_maps)
         else:
-            fwhm_maps = np.ma.masked_where(fwhm_map > 400, fwhm_map)
+            fwhm_maps = np.ma.masked_where(fwhm_maps > 400, fwhm_maps)
 
         self._fwhm_maps = fwhm_maps
         self._mean_maps = mean_maps
@@ -2636,9 +2636,13 @@ class Noise(Experiment):
         self._gain_corrected = gain_bool
 
         if save_data:
-            np.save(fwhm_path, fwhm_maps)
-            np.save(mean_path, mean_maps)
-            np.save(count_path, count_maps)
+            # We can't save the array mask because the feature isn't 
+            # implemented in numpy's 'save' function yet. If you really
+            # want to save the mask, you can pickle it, though I've read
+            # that lead to larger file sizes.
+            np.save(fwhm_path, fwhm_maps.data)
+            np.save(mean_path, mean_maps.data)
+            np.save(count_path, count_maps.data)
             fit_data.to_csv(fit_data_path)
 
         return fit_data
@@ -3780,7 +3784,7 @@ class GammaFlood(Experiment):
                 # since we don't need the index of the original DataFrame, and
                 # np.histogram should be faster on an ndarray than a DataFrame.
                 channel = self.raw_data_1d.loc[
-                    (col_mask) & (row_mask), 'PH'].data
+                    (col_mask) & (row_mask), 'PH'].values
 
                 # If there were events at this pixel, fit the strongest peak
                 # in the channel spectrum with a Gaussian.
