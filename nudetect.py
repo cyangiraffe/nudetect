@@ -3299,7 +3299,7 @@ class Leakage(Experiment):
 
 
     def plot_line_current(self, title='', mode='CP', save_plot=True, 
-        plot_dir='', plot_subdir='', plot_ext='.pdf'):
+        plot_dir='', plot_subdir='', plot_ext='.pdf', etc=''):
         '''
         Plots mean leakage current versus bias voltage as a line plot, with a 
         line for each temperature. Done for only one mode. Error bars included
@@ -3334,6 +3334,9 @@ class Leakage(Experiment):
             plot_ext: str
                 The file extension to the saved file.
                 (default: '.pdf')
+            etc: str
+                Additional information about the plot
+                (default: '')
         '''
         if save_plot:
             description = 'leakage_voltage_line'
@@ -3396,6 +3399,9 @@ class Leakage(Experiment):
             plot_ext: str
                 The file extension to the saved file.
                 (default: '.pdf')
+            etc: str
+                Additional information about the plot
+                (default: '')
         '''
         if save_plot:
             description = 'outliers_voltage_line'
