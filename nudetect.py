@@ -2271,7 +2271,7 @@ class Noise(Experiment):
                     mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
 
                     # Populating a row of fit_data with fit information
-                    df_row = [g.mean, mean_err, g.fwhm, fwhm_err]
+                    df_row = [g.mean.value, mean_err, g.fwhm, fwhm_err]
                     fit_data.loc[(row, col)] = df_row
 
                     if save_plot:
@@ -2582,7 +2582,7 @@ class Noise(Experiment):
                         mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
 
                         # Populating a row of fit_data with fit information
-                        df_row = [g.mean, mean_err, g.fwhm, fwhm_err]
+                        df_row = [g.mean.value, mean_err, g.fwhm, fwhm_err]
                         fit_data.loc[(start_cap, row, col)] = df_row
 
                         if save_plot:
