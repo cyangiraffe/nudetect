@@ -2265,14 +2265,20 @@ class Noise(Experiment):
                     mean_map[maprow, mapcol] = np.multiply(
                         g.mean, gain[maprow, mapcol])
 
-                    # 1 stardard deviation error for Gaussian parameters.
-                    sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
-                    fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
-                    mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
+                    # If the fit succeeded, record some of the fit information
+                    # in the 'fit_data' DataFrame.
+                    if fit_g.fit_info['param_cov'] is not None:
+                        # 1 stardard deviation error for Gaussian parameters.
+                        sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
+                        fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
+                        mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
 
-                    # Populating a row of fit_data with fit information
-                    df_row = [g.mean.value, mean_err, g.fwhm, fwhm_err]
-                    fit_data.loc[(row, col)] = df_row
+                        # Populating a row of fit_data with fit information
+                        df_row = [g.mean.value, mean_err, g.fwhm, fwhm_err]
+                        fit_data.loc[(row, col)] = df_row
+                    else:
+                        df_row = [g.mean.value, np.nan, g.fwhm, np.nan]
+                        fit_data.loc[(row, col)] = df_row
 
                     if save_plot:
                         plt.hist(np.multiply(
@@ -2576,14 +2582,21 @@ class Noise(Experiment):
                         mean_maps[start_cap, maprow, mapcol] = np.multiply(
                             g.mean, gain[maprow, mapcol])
 
-                        # 1 stardard deviation error for Gaussian parameters.
-                        sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
-                        fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
-                        mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
+                        # If the fit succeeded, record some of the fit 
+                        # information in the 'fit_data' DataFrame.
+                        if fit_g.fit_info['param_cov'] is not None:
+                            # 1 stardard deviation error for Gaussian 
+                            # parameters.
+                            sigma_err = np.diag(fit_g.fit_info['param_cov'])[2]
+                            fwhm_err = 2 * np.sqrt(2 * np.log(2)) * sigma_err
+                            mean_err = np.diag(fit_g.fit_info['param_cov'])[1]
 
-                        # Populating a row of fit_data with fit information
-                        df_row = [g.mean.value, mean_err, g.fwhm, fwhm_err]
-                        fit_data.loc[(start_cap, row, col)] = df_row
+                            # Populating a row of fit_data with fit information
+                            df_row = [g.mean.value, mean_err, g.fwhm, fwhm_err]
+                            fit_data.loc[(start_cap, row, col)] = df_row
+                        else:
+                            df_row = [g.mean.value, np.nan, g.fwhm, np.nan]
+                            fit_data.loc[(start_cap, row, col)] = df_row
 
                         if save_plot:
                             plt.hist(np.multiply(
