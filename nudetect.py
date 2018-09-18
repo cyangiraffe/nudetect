@@ -1647,8 +1647,8 @@ class Experiment:
         cmap.set_bad(color='gray')
 
         # The 'extent' kwarg is necessary to make axes flush to the image.
-        extent = (self._col_start, self._col_end, 
-            self._row_start, self._row_end)
+        extent = (self._start_col, self._end_col, 
+            self._start_row, self._end_row)
         plt.imshow(values, vmin=vmin, vmax=vmax, extent=extent,
             cmap=cmap)
 
