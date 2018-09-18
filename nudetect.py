@@ -1720,24 +1720,105 @@ class Noise(Experiment):
     Private attributes:
         _fwhm_map: 2D numpy.ndarray
             An array with the fwhm of the gaussian fit to the noise
-            data collected at the corresponding pixel.
+            data collected at the corresponding pixel. Axes below:
+                axis 0: row or y-coordinate
+                axis 1: column or x-coordinate
+            For example, to access the fwhm of the spectrum of the pixel
+            at row 3 and column 4,
+                >>> fwhm_map = get_fwhm_map()
+                >>> fwhm_map[3, 4]
             (initialized to None)
+
         _mean_map: 2D numpy.ndarray
             An array with the mean of the gaussian fit to the noise
-            data collected at the corresponding pixel.
+            data collected at the corresponding pixel. Axes below:
+                axis 0: row or y-coordinate
+                axis 1: column or x-coordinate
+            For example, to access the mean of the spectrum of the pixel
+            at row 3 and column 4,
+                >>> fwhm_map = get_mean_map()
+                >>> fwhm_map[3, 4]
             (initialized to None)
+
         _fwhm_maps: 3D numpy.ndarray
-            TODO
+            An array with the fwhm of the gaussian fit to the noise
+            data collected at the corresponding pixel. Axes below:
+                axis 0: starting capacitor
+                axis 1: row or y-coordinate
+                axis 2: column or x-coordinate
+            For example, to access the fwhm of the spectrum of the pixel
+            at row 3 and column 4, and starting capacitor 0,
+                >>> fwhm_map = get_fwhm_map()
+                >>> fwhm_map[0, 3, 4]
+            (initialized to None)
+
         _mean_maps: 3D numpy.ndarray
-            TODO
-        _quick_fit_data: pandas.DataFrame
-            TODO
-        _full_fit_data: pandas.DataFrame
-            TODO
+            An array with the mean of the gaussian fit to the noise
+            data collected at the corresponding pixel. Axes below:
+                axis 0: starting capacitor
+                axis 1: row or y-coordinate
+                axis 2: column or x-coordinate
+            For example, to access the mean of the spectrum of the pixel
+            at row 3 and column 4, and starting capacitor 0,
+                >>> mean_map = get_fwhm_map()
+                >>> mean_map[0, 3, 4]
+            (initialized to None)
+
+        quick_fit_data: pandas.DataFrame
+            A MultiIndexed DataFrame containing the mean and FWHM of each
+            Gaussian fit and their errors. Intended to help spot when
+            fitting has gone poorly. 
+
+            Columns:
+                'mean', 'mean error', 'fwhm', 'fwhm error'
+            Index:
+                ('pixel row', 'pixel col')
+
+            For example, to get the mean of the gaussian fit at the pixel 
+            in row 10, column 11 (i.e., RAWY = 10, RAWX = 11), 
+            one would type:
+
+            >>> fit_data.loc[(10, 11), 'mean']
+
+            For more, check out the pandas documentation for MultiIndexing
+            at http://pandas.pydata.org/pandas-docs/stable/advanced.html
+            and look at the MultiIndex heirarchy itself using
+
+            >>> fit_data.index
+
+        full_fit_data: pandas.DataFrame
+            A MultiIndexed DataFrame containing the mean and FWHM of each
+            Gaussian fit and their errors. Intended to help spot when
+            fitting has gone poorly. 
+
+            Columns:
+                'mean', 'mean error', 'fwhm', 'fwhm error'
+            Index:
+                ('start cap', 'pixel row', 'pixel col')
+
+            For example, to get the mean of the gaussian fit to the 4th 
+            starting capactior at the pixel in row 10, column 11 
+            (i.e., RAWY = 10, RAWX = 11), one would type:
+
+            >>> fit_data.loc[(4, 10, 11), 'mean']
+
+            All columns with data for starting capacitor 4 only would be:
+
+            >>> fit_data.loc[4]
+
+            All columns with data for the pixel at row 10, column 11:
+
+            >>> fit_data.xs((10, 11), level=('pixel row', 'pixel col'))
+
+            For more, check out the pandas documentation for MultiIndexing
+            at http://pandas.pydata.org/pandas-docs/stable/advanced.html
+            and look at the MultiIndex heirarchy itself using
+
+            >>> fit_data.index0
+
         _gain_corrected: bool
-            If True, indicates that the '_fwhm_map' attribute has been gain-
-            corrected. If False, it has not. If None, then the '_fwhm_data'
-            attribute should not have been initialized yet.
+            If True, indicates that all processed data attributes have been
+            corrected for gain. If False, then none of them have.
             (initialized to None)
     '''
     def __init__(self, raw_data_path, detector, voltage, temp, pos=0, 
@@ -1866,6 +1947,19 @@ class Noise(Experiment):
         if type(gain_corrected) != bool:
             raise TypeError("'gain_corrected must be type 'bool'. Type "
                 + f"{type(gain_corrected)} was given.")
+
+        # Make sure we don't mix processed data that is gain corrected with 
+        # processed data that isn't. This way, the _gain_corrected attribute
+        # can represent the entire instance's processed data at once, and 
+        # generally makes things simpler.
+        if self._gain_corrected == False and gain_corrected == True:
+            raise ValueError('It looks like the data being loaded is gain '
+                "corrected, but there is data stored in this instance that "
+                "isn't. Mixing the two is not allowed.")
+        elif self._gain_corrected == True and gain_corrected == False:
+            raise ValueError('It looks like the data being loaded is not gain '
+                "corrected, but there is data stored in this instance that "
+                "is. Mixing the two is not allowed.")
  
         self._gain_corrected = gain_corrected
 
@@ -2054,7 +2148,7 @@ class Noise(Experiment):
                 None, defaults to the array in 'self.gain'.
                 (default: None)
             save_plot: bool
-                If true, plots and energy spectrum for each pixel and saves
+                If true, plots an energy spectrum for each pixel and saves
                 the figure.
                 (default: True)
             plot_dir: str
@@ -3971,7 +4065,7 @@ class GammaFlood(Experiment):
                 mapcol = col - self._start_col
                 # Getting PH_COM values ('pulses') of all events at current 
                 # pixel and storing as an ndarray in 'pulses'.
-                pulses = ph_com.loc[(row_mask) & (col_mask)].data
+                pulses = ph_com.loc[(row_mask) & (col_mask)].values
                 # The gain for the 3 x 3 grid around this pixel
                 gain_grid = gain[maprow:maprow + 3, mapcol:mapcol + 3]
                 # iterating through the PH_COM values for this pixel
@@ -4086,9 +4180,11 @@ class GammaFlood(Experiment):
         energy_low, energy_high = energy - 2, energy + 2
         # 'bool_spectrum' is a boolean array with 'True' at ea. index of 
         # 'spectrum' whose energy is in the above interval.
-        bool_spectrum = spectrum[1] > energy_low and spectrum[1] < energy_high
+        bool_spectrum = np.logical_and(spectrum[1] > energy_low, 
+                                       spectrum[1] < energy_high)
         start = np.argmax(bool_spectrum)
         end = len(bool_spectrum) - np.argmax(bool_spectrum[::-1])
+        del bool_spectrum, energy_low, energy_high
         # 'centroid' is the index of the bin with the most counts in 
         # the above interval.
         centroid = np.argmax(spectrum[0, start:end]) + start
@@ -4117,7 +4213,7 @@ class GammaFlood(Experiment):
             r'$\mathrm{FWHM}=' + display_fwhm + r'\pm' + display_err + r'$ eV',
             fontsize=13)
 
-        plt.plot(spectrum[1], spectrum[0], label=source.latex)
+        plt.plot(spectrum[1], spectrum[0], label=self.source.latex)
         plt.plot(spectrum[1, fit_channels], g(fit_channels), 
             label = 'Gaussian fit')
         plt.xlabel('Energy (keV)')
