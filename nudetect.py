@@ -2436,10 +2436,12 @@ class Noise(Experiment):
         # Generating the save paths, if needed.
         if save_data:
             fwhm_path = self.construct_path('data', ext='.npy', 
-                save_dir=data_dir, subdir=data_subdir, description='full_fwhm_data',
+                save_dir=data_dir, subdir=data_subdir, 
+                description='full_fwhm_data',
                 etc=etc)
             mean_path = self.construct_path('data', ext='.npy', 
-                save_dir=data_dir, subdir=data_subdir, description='full_mean_data',
+                save_dir=data_dir, subdir=data_subdir, 
+                description='full_mean_data',
                 etc=etc)
             count_path = self.construct_path('data', ext='.npy', 
                 save_dir=data_dir, subdir=data_subdir, 
@@ -2510,7 +2512,7 @@ class Noise(Experiment):
 
         # Iterating through starting capacitor values
         for start_cap in range(self.num_caps):
-            start_cap_mask = np.array(data['S_CAP'] == start_cap)
+            start_cap_mask = self.raw_data_1d.loc[:, 'S_CAP'] == start_cap
             # Generate 'chan_map', a nested list representing an array 
             # of lists, each of which contains all the trigger readings for 
             # its corresponding pixel. The shape of the 'array' of lists
@@ -2518,14 +2520,14 @@ class Noise(Experiment):
             # thickness of this buffer is calculated below and now that 
             # I look at it I'm actually not sure if this works. TODO
             chan_map = [[[] 
-                for col in range(self._num_cols + (3 - self._num_cols) % 3)] 
-                for row in range(self._num_rows + (3 - self._num_rows) % 3)]
+                for col in range(self._num_cols + 1)] 
+                for row in range(self._num_rows + 1)]
 
             # Iterating through pixels
             for col in self._col_iter:
-                col_mask = np.array(data['RAWX']) == col
+                col_mask = self.raw_data_1d.loc[:, 'RAWX'] == col
                 for row in self._row_iter:
-                    row_mask = np.array(data['RAWY']) == row
+                    row_mask = self.raw_data_1d.loc[:, 'RAWY'] == row
                     # Storing all readings for the current pixel in 'pulses'.
                     mask = (col_mask) & (row_mask) & (start_cap_mask)
                     pulses = ph_raw.loc[mask]
@@ -3349,7 +3351,8 @@ class Leakage(Experiment):
         plt.figure()
 
         for temp in self.temps:
-            bool_df = (stats.loc[:, 'mode'] == mode) & (stats.loc[:, 'temp'] == temp)
+            bool_df = (stats.loc[:, 'mode'] == mode) &\
+                (stats.loc[:, 'temp'] == temp)
             rows = stats.loc[bool_df]
             temp_label = r'$T = {}^\circ C$'.format(temp)
             plt.errorbar(rows['voltage'], rows['mean'], yerr=rows['stddev'],
