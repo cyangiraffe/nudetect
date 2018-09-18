@@ -2312,6 +2312,7 @@ class Noise(Experiment):
 
         self._fwhm_map = fwhm_map
         self._mean_map = mean_map
+        self.count_map = count_map
         self._quick_fit_data = fit_data
         # Set '_gain_corrected' way down here to make sure the maps of 
         # FWHM and mean were successfully generated.
@@ -2515,10 +2516,10 @@ class Noise(Experiment):
             start_cap_mask = self.raw_data_1d.loc[:, 'S_CAP'] == start_cap
             # Generate 'chan_map', a nested list representing an array 
             # of lists, each of which contains all the trigger readings for 
-            # its corresponding pixel. The shape of the 'array' of lists
-            # is the detector region's shape with a buffer around it. The
-            # thickness of this buffer is calculated below and now that 
-            # I look at it I'm actually not sure if this works. TODO
+            # its corresponding pixel. A buffer is added on two of the sides 
+            # because the raw data contains dummy values representing the 
+            # imaginary pixels in the 3 x 3 grid surroudning a pixel on a
+            # detector edge whose readout was triggered.
             chan_map = [[[] 
                 for col in range(self._num_cols + 1)] 
                 for row in range(self._num_rows + 1)]
@@ -2632,6 +2633,7 @@ class Noise(Experiment):
 
         self._fwhm_maps = fwhm_maps
         self._mean_maps = mean_maps
+        self.count_maps = count_maps
         self._full_fit_data = fit_data
         # Set '_gain_corrected' way down here to make sure the maps of 
         # FWHM and mean were successfully generated.
