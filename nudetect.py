@@ -2384,7 +2384,8 @@ class Noise(Experiment):
 
                     if save_plot:
                         plt.hist(np.multiply(
-                                chan_map[row][col], gain[maprow, mapcol]),
+                                chan_map[maprow][mapcol], 
+                                gain[maprow, mapcol]),
                             bins=np.multiply(bins, gain[maprow, mapcol]), 
                             range=(-maxchannel * gain[maprow, mapcol], 
                                     maxchannel * gain[maprow, mapcol]), 
