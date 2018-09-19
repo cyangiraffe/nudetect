@@ -101,6 +101,34 @@ def check_isotope_format(isotope):
     return isotope
 
 
+def get_mean_stdv(values, precision, value_label):
+    '''
+    Helper function for returning mean and stdv of some values, with
+    some exception handling.
+    '''
+    try:
+        if precision == 0:
+            m = int(round(np.mean(values)), precision)
+        else:
+            m = round(np.mean(values), precision)
+    except TypeError:
+        print("Warning: something went wrong with calculating the "
+            f"the mean of {value_label} in histogram plotting.")
+        m = 'NA'
+
+    try:
+        if precision == 0:
+            s = int(round(np.std(values)), precision)
+        else:
+            s = round(np.std(values), precision)
+    except TypeError:
+        print("Warning: something went wrong with calculating the "
+            f"the standard deviation of {value_label} in histogram plotting.")
+        s = 'NA'
+
+    return m, s
+
+
 ##
 ## Miscellaneous helper functions that the user may also find useful.
 ##
@@ -1426,10 +1454,7 @@ class Experiment:
             if title == 'auto':
                 title = self.title('Count Histogram')
             xlabel = 'Counts'
-            mean = int(round(np.mean(values), 0))
-            stdv = int(round(np.std(values), 0))
-            # TODO: Let's see what the None behavior is
-            # hist_range = (0, np.max(values) + 1)
+            mean, stdv = get_mean_stdv(values, 0, value_label)
 
         elif 'fwhm' in value_label.lower():
             xlabel = 'FWHM'
@@ -1438,16 +1463,16 @@ class Experiment:
             if title == 'auto':
                 title = self.title('FWHM Histogram')
 
-            # Setting some plot parameters and converting units based on whether 
-            # the supplied data is gain-corrected.
+            # Setting some plot parameters and converting units based on  
+            # whether the supplied data is gain-corrected.
             if self._gain_corrected:
-                mean = int(round(np.mean(values) * 1000, 0))
-                stdv = int(round(np.std(values) * 1000, 0))
+                mean, stdv = get_mean_stdv(values, 0, value_label)
+                mean *= 1000
+                stdv *= 1000
                 text_units = ' eV'
                 axis_units = ' (keV)'
             else:
-                mean = round(np.mean(values), 0)
-                stdv = round(np.std(values), 0)
+                mean, stdv = get_mean_stdv(values, 0, value_label)
                 text_units = ' channels'
                 axis_units = ' (channels)'
 
@@ -1461,13 +1486,13 @@ class Experiment:
             # Setting some plot parameters and converting units based on  
             # whether the supplied data is gain-corrected.
             if self._gain_corrected:
-                mean = int(round(np.mean(values) * 1000, 0))
-                stdv = int(round(np.std(values) * 1000, 0))
+                mean, stdv = get_mean_stdv(values, 0, value_label)
+                mean *= 1000
+                stdv *= 1000
                 text_units = ' eV'
                 axis_units = ' (keV)'
             else:
-                mean = round(np.mean(values), 0)
-                stdv = round(np.std(values), 0)
+                mean, stdv = get_mean_stdv(values, 0, value_label)
                 text_units = ' channels'
                 axis_units = ' (channels)'
 
@@ -1479,8 +1504,7 @@ class Experiment:
                 title = self.title('Leakage Current Histogram')
 
             xlabel = 'Leakage Current'
-            mean = round(np.mean(values), 2)
-            stdv = round(np.std(values), 2)
+                mean, stdv = get_mean_stdv(values, 2, value_label)
             text_units = ' pA'
             axis_units = ' (pA)'
 
@@ -1491,8 +1515,7 @@ class Experiment:
                 text_units = kwargs['text_units']
             if 'axis_units' in kwargs:
                 axis_units = kwargs['axis_units']
-            mean = round(np.mean(values), 3)
-            stdv = round(np.mean(values), 3)
+            mean, stdv = get_mean_stdv(values, 3, value_label)
 
         values = values.flatten()
 
