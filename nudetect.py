@@ -2342,8 +2342,8 @@ class Noise(Experiment):
         # pixel's spectrum.
         
         # Iterate through elements of chan_map
-        for row in range(self._num_rows):
-            for col in range(self._num_cols):
+        for row in self._row_iter:
+            for col in self._col_iter:
                 maprow = row - self._start_row
                 mapcol = col - self._start_col
                 # If there were events at this pixel, bin them by channel
