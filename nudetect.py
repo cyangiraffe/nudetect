@@ -2301,8 +2301,8 @@ class Noise(Experiment):
         # imaginary pixels in the 3 x 3 grid surroudning a pixel on a
         # detector edge whose readout was triggered.
         chan_map = [[[] 
-            for col in range(self._num_cols + 1)] 
-            for row in range(self._num_rows + 1)]
+            for col in range(self._num_cols + 2)] 
+            for row in range(self._num_rows + 2)]
 
         ph_raw = self.raw_data_2d['PH_RAW']
 
@@ -2615,8 +2615,8 @@ class Noise(Experiment):
             # imaginary pixels in the 3 x 3 grid surroudning a pixel on a
             # detector edge whose readout was triggered.
             chan_map = [[[] 
-                for col in range(self._num_cols + 1)] 
-                for row in range(self._num_rows + 1)]
+                for col in range(self._num_cols + 2)] 
+                for row in range(self._num_rows + 2)]
 
             # Iterating through pixels
             for col in self._col_iter:
