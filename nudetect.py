@@ -1111,6 +1111,11 @@ class Experiment:
         # Dimensions of the above region with a 1 pixel buffer on all sides.
         det_shape_buff = (num_rows + 2, num_cols + 2)
 
+        self._start_row = start_row
+        self._start_col = start_col
+        self._end_col   = end_col
+        self._end_row   = end_row
+
         self._row_iter = row_iter
         self._col_iter = col_iter
 
@@ -2330,8 +2335,8 @@ class Noise(Experiment):
         # Generate a count map of micropulse-triggered events from 
         # 'chan_map'.
         count_map = np.array([[len(chan_map[row][col]) 
-            for col in range(self._num_cols)] 
-            for row in range(self._num_rows)])
+            for col in range(1, self._num_cols + 1)] 
+            for row in range(1, self._num_rows + 1)])
        
         # Generate a fwhm map of noise, and plot the gaussian fit to each 
         # pixel's spectrum.
