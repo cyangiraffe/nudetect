@@ -2296,13 +2296,13 @@ class Noise(Experiment):
 
         # Generate 'chan_map', a nested list representing an array 
         # of lists, each of which contains all the trigger readings for 
-        # its corresponding pixel. The shape of the 'array' of lists
-        # is the detector region's shape with a buffer around it. The
-        # thickness of this buffer is calculated below and now that 
-        # I look at it I'm actually not sure if this works. TODO
+        # its corresponding pixel. A buffer is added on two of the sides 
+        # because the raw data contains dummy values representing the 
+        # imaginary pixels in the 3 x 3 grid surroudning a pixel on a
+        # detector edge whose readout was triggered.
         chan_map = [[[] 
-            for col in range(self._num_cols + (3 - self._num_cols) % 3)] 
-            for row in range(self._num_rows + (3 - self._num_rows) % 3)]
+            for col in range(self._num_cols + 1)] 
+            for row in range(self._num_rows + 1)]
 
         ph_raw = self.raw_data_2d['PH_RAW']
 
