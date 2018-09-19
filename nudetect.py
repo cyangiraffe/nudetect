@@ -112,9 +112,7 @@ def get_mean_stdv(values, precision, value_label):
         else:
             m = round(np.mean(values), precision)
     except TypeError:
-        print("Warning: something went wrong with calculating the "
-            f"the mean of {value_label} in histogram plotting.")
-        m = 'NA'
+        m = np.mean(values)
 
     try:
         if precision == 0:
@@ -122,9 +120,7 @@ def get_mean_stdv(values, precision, value_label):
         else:
             s = round(np.std(values), precision)
     except TypeError:
-        print("Warning: something went wrong with calculating the "
-            f"the standard deviation of {value_label} in histogram plotting.")
-        s = 'NA'
+        s = np.std(values)
 
     return m, s
 
