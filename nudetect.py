@@ -1441,17 +1441,13 @@ class Experiment:
             # Setting some plot parameters and converting units based on whether 
             # the supplied data is gain-corrected.
             if self._gain_corrected:
-                if hist_range is None:
-                    hist_range = (0, 4)
                 mean = int(round(np.mean(values) * 1000, 0))
                 stdv = int(round(np.std(values) * 1000, 0))
                 text_units = ' eV'
                 axis_units = ' (keV)'
             else:
-                if hist_range is None:
-                    hist_range = (0, 150) # Not a good default?
-                mean = round(int(np.mean(values)), 0)
-                stdv = round(int(np.std(values)), 0)
+                mean = round(np.mean(values), 0)
+                stdv = round(np.std(values), 0)
                 text_units = ' channels'
                 axis_units = ' (channels)'
 
