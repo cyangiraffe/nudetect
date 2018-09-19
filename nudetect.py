@@ -1450,8 +1450,8 @@ class Experiment:
             else:
                 if hist_range is None:
                     hist_range = (0, 150) # Not a good default?
-                mean = round(np.mean(values), 0)
-                stdv = round(np.std(values), 0)
+                mean = round(int(np.mean(values)), 0)
+                stdv = round(int(np.std(values)), 0)
                 text_units = ' channels'
                 axis_units = ' (channels)'
 
