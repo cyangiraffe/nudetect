@@ -1114,6 +1114,9 @@ class Experiment:
         self._row_iter = row_iter
         self._col_iter = col_iter
 
+        self._num_rows = num_rows
+        self._num_cols = num_cols
+
         self._row_slice = row_slice
         self._col_slice = col_slice
 
