@@ -1500,7 +1500,7 @@ class Experiment:
                 title = self.title('Leakage Current Histogram')
 
             xlabel = 'Leakage Current'
-                mean, stdv = get_mean_stdv(values, 2, value_label)
+            mean, stdv = get_mean_stdv(values, 2, value_label)
             text_units = ' pA'
             axis_units = ' (pA)'
 
@@ -1518,7 +1518,13 @@ class Experiment:
         # Make the plot
         plt.figure()
         ax = plt.axes() # need axes object for text positioning
-        plt.hist(values, bins=bins, range=hist_range, histtype='stepfilled')
+        try:
+            plt.hist(values, bins=bins, range=hist_range, 
+                histtype='stepfilled')
+        except ValueError as ve:
+            print(ve, "The 'plot_pixel_hist' method will exit wihtout "
+                "raising an exception.")
+            return
 
         # Setting text position based on user input. This will display the mean
         # and standard deviation of the fwhm data.
