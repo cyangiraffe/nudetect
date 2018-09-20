@@ -1462,12 +1462,16 @@ class Experiment:
             # Setting some plot parameters and converting units based on  
             # whether the supplied data is gain-corrected.
             if self._gain_corrected:
+                if hist_range is None:
+                    hist_range = (0, 4)
                 mean, stdv = get_mean_stdv(values, 0, value_label)
                 mean *= 1000
                 stdv *= 1000
                 text_units = ' eV'
                 axis_units = ' (keV)'
             else:
+                if hist_range is None:
+                    hist_range = (0, 150)
                 mean, stdv = get_mean_stdv(values, 0, value_label)
                 text_units = ' channels'
                 axis_units = ' (channels)'
@@ -1640,18 +1644,25 @@ class Experiment:
 
         elif 'fwhm' in value_label.lower():
             if not cb_label: 
-                cb_label = 'FWHM (keV)'
+                if self._gain_corrected:
+                    cb_label = 'FWHM (keV)'
+                else:
+                    cb_label = 'FWHM (channels)'
             if values is None: 
                 values = self._fwhm_map
             if title == 'auto':
                 title = self.title('FWHM Map')
 
         elif 'mean' in value_label.lower():
-            xlabel = 'Mean'
+            if not cb_label: 
+                if self._gain_corrected:
+                    cb_label = 'Mean (keV)'
+                else:
+                    cb_label = 'Mean (channels)'
             if values is None: 
                 values = self._mean_map
             if title == 'auto':
-                title = self.title('Mean Histogram')
+                title = self.title('Mean Map')
 
         elif 'leak' in value_label.lower():
             if not cb_label:
