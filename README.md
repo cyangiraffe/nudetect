@@ -1,4 +1,4 @@
-# NuDetect (alpha)
+# NuDetect (v. 0.0)
 
 NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data) and ```Leakage``` (for leakage current data, WIP). 
 
@@ -22,27 +22,38 @@ Currently, the package can be crudely installed by putting the 'nudetect.py' fil
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-from nudetect import GammaFlood
+from nudetect import GammaFlood, Source
+
+# Initializing a 'Source' object from a CSV file logging commonly used X-ray
+# sources. In this case, we take the source that is labelled as the default
+# Am241 source in this CSV. For how to modify this CSV, otherwise initialize
+# 'Source' objects, and viewing emission line data for sources, call 
+# 'help(Source)' for the corresponding class's documentation.
+am = Source.from_csv('Am241')
 
 # Here, we initialize a 'GammaFlood' object. This stores information about the 
 # experiment, and will be populated with analyzed data as we call its methods
 # for processing the raw gamma flood data.
-gamma = GammaFlood('raw_data/20170315_H100_Am241_-10C_400V.fits', # raw data
-					data_dir='data/{}', # default save directory for data
-					plot_dir='plots/{}', # default save directory for plots
-					detector='H100', # detector ID
-					source='Am241', # Used to fit peaks and get gain data
-					voltage=0, # in volts
-					temp=-10) # in degrees celsius
+gamma = GammaFlood('20170315_H100_gamma_Am241_-10C_0V.fits', # raw data
+    data_dir='outputs/{}/data', # default save path for data
+    plot_dir='outputs/{}/plots', # default save path for plots
+    detector='H100', # detector ID
+    source=am, # Used to fit peaks and get gain data
+    voltage=0, # in volts
+    temp=-10) # in degrees celsius
 
 # Note: The '{}' in 'save_dir' is automatically formatted to the detector ID.
-# In this case, data_dir == 'data/H100'
+# In this case, data_dir == 'data/H120'
 
 # At this point, we have some processed data attributes initialized, but not
 # contianing any data:
-#	gamma.count_map: None
+#   gamma.count_map: None
 #   gamma.gain:      None
-#	gamma.spectrum:  None
+#   gamma.spectrum:  None
+
+# Loading the raw data
+gamma.load_raw_data()
+
 
 #
 # Processing data
@@ -64,9 +75,9 @@ gamma.gen_spectrum()
 
 
 # Now, our processed data attributes have been populated with data:
-#	gamma.count_map.shape: (32, 32)
+#   gamma.count_map.shape: (32, 32)
 #   gamma.gain.shape:      (32, 32)
-#	gamma.spectrum.shape:  (2, 10000)
+#   gamma.spectrum.shape:  (2, 10000)
 
 #
 # Plotting
@@ -79,6 +90,7 @@ gamma.gen_spectrum()
 # Plots and fits 'spectrum'.
 gamma.plot_spectrum()
 
+
 # Plots a histogram that bins pixels by their event counts.
 gamma.plot_pixel_hist('Count')
 
@@ -90,7 +102,7 @@ gamma.plot_pixel_map('Gain')
 
 ## Developer Notes
 * All classes with data analysis/plotting methods inherit from the ```Experiment``` base class, which is not useful to instantiate on its own, but contains methods to be shared with its children.
-* There is one additional class called ```Line``` that can store information about a spectral line and the source that emits it.
+* There is one additional class called ```Source``` that can store information about a specific X-ray source (e.g., its emission lines).
 * The ```construct_path``` method of the ```Experiment``` class is designed to throw a lot of exceptions and be strict about formatting early on to avoid complications later. Call it early in scripts to avoid losing the results of a long computation to a mistyped directory.
 
 ## Authors

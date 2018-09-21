@@ -2,6 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from nudetect import GammaFlood, Source
 
+# Initializing a 'Source' object from a CSV file logging commonly used X-ray
+# sources. In this case, we take the source that is labelled as the default
+# Am241 source in this CSV. For how to modify this CSV, otherwise initialize
+# 'Source' objects, and viewing emission line data for sources, call 
+# 'help(Source)' for the corresponding class's documentation.
 am = Source.from_csv('Am241')
 
 # Here, we initialize a 'GammaFlood' object. This stores information about the 
