@@ -22,7 +22,7 @@ noise.load_raw_data()
 
 noise.gen_quick_noise(plot_subdir='pixels')
 
-noise.gen_full_noise()
+noise.gen_full_noise(save_plot=True, plot_subdir='pixels')
 
 
 #
