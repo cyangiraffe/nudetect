@@ -1,6 +1,6 @@
 # NuDetect (v. 0.0)
 
-NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data) and ```Leakage``` (for leakage current data, WIP). 
+NuDetect uses an object-oriented framework to organize analyses of different detector experiments. For example, the class ```GammaFlood``` contains methods and takes initialization parameters specific to the analysis and plotting of gamma flood data. Other such classes include ```Noise``` (for noise data) and ```Leakage``` (for leakage current data). 
 
 ## Getting Started
 
